@@ -1,0 +1,1523 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>별의 심장 — 핵융합</title>
+<meta name="description" content="별의 중심에서 일어나는 p-p 연쇄 반응과 CNO 순환을 three.js 로 입체적으로 보여 주는 수업용 시각화.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>&#9728;&#65039;</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Noto+Serif+KR:wght@600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<!-- 순서가 중요하다: THREE.Pass 는 EffectComposer.js 가 정의한다 -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/renderers/CSS2DRenderer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+<style>
+  :root {
+    --bg:#05030a; --glass:rgba(16,10,20,.62); --glass-2:rgba(255,255,255,.06);
+    --line:rgba(255,200,150,.16); --line-2:rgba(255,200,150,.30);
+    --ink:#f6efe8; --muted:#c7b6a8; --faint:#8d7d72;
+    --sun:#ffb347; --sun-2:#ff7a2f;
+    --proton:#ff6a45; --neutron:#8fb4ff; --positron:#5ff7ff; --neutrino:#a6ff7a; --gamma:#ffe066; --helium:#ffd27a;
+    --f-body:"Noto Sans KR",system-ui,sans-serif; --f-title:"Noto Serif KR",serif; --f-mono:"JetBrains Mono",ui-monospace,monospace;
+    color-scheme: dark;
+  }
+  * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
+  html, body { margin:0; height:100%; overflow:hidden; background:var(--bg); color:var(--ink); font-family:var(--f-body); }
+  #stage { position:fixed; inset:0; }
+  #stage canvas { display:block; }
+  #labels { position:fixed; inset:0; pointer-events:none; }
+
+  /* ── 3D 라벨 ── */
+  .lbl { font-family:var(--f-body); font-size:13px; font-weight:700; color:#fff; padding:2px 8px; border-radius:999px;
+         background:rgba(10,6,14,.55); border:1px solid rgba(255,255,255,.18); white-space:nowrap; text-shadow:0 0 8px rgba(0,0,0,.8);
+         transform:translateY(-6px); transition:opacity .4s; }
+  .lbl.small { font-size:11px; font-weight:600; padding:1px 6px; }
+  .lbl.p { border-color:rgba(255,106,69,.7); } .lbl.e { border-color:rgba(95,247,255,.8); color:var(--positron); }
+  .lbl.nu { border-color:rgba(166,255,122,.7); color:var(--neutrino); } .lbl.g { border-color:rgba(255,224,102,.8); color:var(--gamma); }
+  .lbl.he { border-color:rgba(255,210,122,.9); color:var(--helium); box-shadow:0 0 18px rgba(255,190,90,.45); }
+  .lbl.layer { background:rgba(10,6,14,.42); font-weight:500; font-size:12.5px; border-radius:8px; padding:4px 9px; line-height:1.35; text-align:left; }
+  .lbl.layer b { color:var(--sun); font-weight:700; }
+  .lbl.station { font-size:15px; padding:3px 10px; }
+  .lbl.station.on { border-color:var(--sun); box-shadow:0 0 16px rgba(255,170,80,.55); }
+  .lbl.kind { font-family:var(--f-mono); font-size:11px; font-weight:600; color:var(--muted); background:rgba(10,6,14,.35); }
+  .lbl.barrier { color:#ffd0c0; border-color:rgba(255,140,110,.6); font-weight:600; font-size:12px; }
+
+  /* 핵종 표기 ²₁H */
+  .nuc { display:inline-flex; align-items:center; white-space:nowrap; }
+  .nuc .az { display:inline-flex; flex-direction:column; align-items:flex-end; font-size:.58em; line-height:1.02; margin-right:1px; font-weight:600; }
+
+  /* ── 머리말 ── */
+  .brand { position:fixed; top:18px; left:22px; max-width:min(440px,60vw); pointer-events:none; }
+  .brand .eyebrow { font-size:11px; letter-spacing:.22em; color:var(--sun); font-weight:700; margin:0 0 4px; }
+  .brand h1 { font-family:var(--f-title); font-size:clamp(22px,3vw,34px); margin:0; line-height:1.15; text-shadow:0 2px 24px rgba(255,120,40,.45); }
+  .brand p { margin:6px 0 0; font-size:13px; color:var(--muted); line-height:1.55; }
+
+  .views { position:fixed; top:18px; right:22px; display:flex; gap:8px; z-index:3; }
+  button { font:inherit; font-size:13px; font-weight:500; color:var(--ink); background:var(--glass); border:1px solid var(--line-2);
+           border-radius:999px; padding:7px 14px; cursor:pointer; backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+           transition:background .2s,border-color .2s,transform .1s; }
+  button:hover { background:rgba(255,160,80,.18); border-color:var(--sun); }
+  button:active { transform:translateY(1px); }
+  button[aria-pressed="true"] { background:linear-gradient(135deg,rgba(255,150,60,.45),rgba(255,90,40,.35)); border-color:var(--sun); color:#fff; }
+  button:focus-visible { outline:2px solid var(--sun); outline-offset:2px; }
+  button.big { font-size:16px; padding:12px 26px; font-weight:700; background:linear-gradient(135deg,#ff9a3c,#ff5a2a); border:0; color:#1a0904;
+               box-shadow:0 8px 40px rgba(255,110,40,.55); }
+  button.big:hover { filter:brightness(1.08); }
+
+  .dive { position:fixed; left:50%; bottom:12vh; transform:translateX(-50%); text-align:center; z-index:3; }
+  .dive p { margin:10px 0 0; font-size:12.5px; color:var(--muted); }
+
+  /* ── 오른쪽 패널 ── */
+  .panel { position:fixed; top:70px; right:22px; bottom:22px; width:min(400px,36vw); display:flex; flex-direction:column; gap:12px; z-index:2;
+           background:var(--glass); border:1px solid var(--line); border-radius:18px; padding:16px; backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+           box-shadow:0 20px 60px rgba(0,0,0,.45); transition:opacity .6s, transform .6s; }
+  .panel.off { opacity:0; transform:translateX(30px); pointer-events:none; }
+  .tabs { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+  .tabs button { border-radius:12px; padding:9px 8px; font-weight:700; font-size:14px; }
+  .tabs button small { display:block; font-weight:400; font-size:11px; color:var(--muted); margin-top:2px; }
+  .tabs button[aria-pressed="true"] small { color:#ffe9d6; }
+
+  .card { background:var(--glass-2); border:1px solid var(--line); border-radius:14px; padding:13px 14px; }
+  .card .k { font-size:11px; letter-spacing:.14em; color:var(--sun); font-weight:700; margin:0 0 6px; }
+  #stepTitle { font-family:var(--f-title); font-size:17px; margin:0 0 8px; line-height:1.35; }
+  #stepEq { font-family:var(--f-body); font-size:19px; font-weight:700; line-height:1.5; margin:0 0 8px; color:#fff;
+            text-shadow:0 0 18px rgba(255,170,90,.35); }
+  #stepEq .arrow { color:var(--sun); margin:0 .3em; }
+  #stepEq .q { color:var(--gamma); font-size:.82em; }
+  #stepDesc { font-size:13px; line-height:1.65; color:var(--muted); margin:0; }
+  #stepDesc b { color:var(--ink); }
+
+  .ctrl { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  .ctrl button { padding:6px 11px; font-family:var(--f-mono); }
+  .ctrl .sp { margin-left:auto; display:flex; gap:4px; }
+  .ctrl .sp button { font-size:12px; padding:5px 9px; }
+  .prog { height:4px; border-radius:2px; background:rgba(255,255,255,.08); overflow:hidden; margin-top:10px; }
+  .prog i { display:block; height:100%; width:0; background:linear-gradient(90deg,var(--sun-2),var(--gamma)); }
+
+  ol.steps { list-style:none; margin:0; padding:0; overflow:auto; flex:1 1 auto; min-height:80px; }
+  ol.steps li button { width:100%; text-align:left; border-radius:10px; padding:7px 10px; display:flex; gap:9px; align-items:center;
+                       background:transparent; border:1px solid transparent; font-size:13px; }
+  ol.steps li button:hover { background:rgba(255,255,255,.05); border-color:var(--line); }
+  ol.steps li button[aria-current="true"] { background:rgba(255,150,60,.16); border-color:rgba(255,170,80,.55); }
+  ol.steps .n { font-family:var(--f-mono); color:var(--faint); width:1.4em; flex:none; }
+  ol.steps .e { flex:1; }
+  ol.steps .mev { font-family:var(--f-mono); font-size:11px; color:var(--gamma); flex:none; }
+  ol.steps li.done .n { color:var(--sun); }
+  ol.steps .arrow { margin:0 .3em; color:var(--sun); }
+
+  .energy { display:flex; flex-direction:column; gap:6px; }
+  .bar { position:relative; height:12px; border-radius:6px; background:rgba(255,255,255,.07); overflow:hidden; display:flex; }
+  .bar i { display:block; height:100%; transition:width .6s ease; }
+  .energy .row { display:flex; justify-content:space-between; font-size:12px; color:var(--muted); font-family:var(--f-mono); }
+  .energy .row b { color:var(--gamma); font-weight:600; }
+
+  /* ── 캡션 ── */
+  .caption { position:fixed; left:50%; bottom:26px; transform:translateX(calc(-50% - min(200px,18vw))); max-width:min(640px,52vw);
+             text-align:center; font-size:15px; line-height:1.55; padding:10px 18px; border-radius:14px; background:rgba(8,5,12,.55);
+             border:1px solid var(--line); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); opacity:0; transition:opacity .45s; z-index:2; }
+  .caption.on { opacity:1; }
+  .caption b { color:var(--sun); }
+
+  /* ── 범례 ── */
+  .legend { position:fixed; left:22px; bottom:22px; display:flex; flex-direction:column; gap:5px; font-size:12px; color:var(--muted);
+            background:var(--glass); border:1px solid var(--line); border-radius:14px; padding:10px 12px; z-index:2; backdrop-filter:blur(10px); }
+  .legend span { display:flex; align-items:center; gap:8px; }
+  .legend i { width:11px; height:11px; border-radius:50%; display:inline-block; box-shadow:0 0 10px currentColor; }
+
+  /* ── 온도 카드 ── */
+  .tcard { position:fixed; left:22px; top:150px; width:300px; z-index:2; background:var(--glass); border:1px solid var(--line);
+           border-radius:16px; padding:12px 14px; backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); transition:opacity .6s; }
+  .tcard.off { opacity:0; pointer-events:none; }
+  .tcard .head { display:flex; justify-content:space-between; align-items:baseline; }
+  .tcard .k { font-size:11px; letter-spacing:.14em; color:var(--sun); font-weight:700; }
+  .tcard .tv { font-family:var(--f-mono); font-size:15px; font-weight:600; }
+  .tcard input[type=range] { width:100%; accent-color:var(--sun); margin:6px 0 2px; }
+  .tcard canvas { width:100%; height:130px; display:block; margin-top:4px; }
+  .tcard .verdict { font-size:12.5px; line-height:1.5; color:var(--muted); margin:6px 0 0; }
+  .tcard .verdict b { color:var(--ink); }
+  .tcard .min { padding:0 8px; font-size:12px; margin-left:8px; }
+  .tcard .head { gap:6px; } .tcard .head .k { margin-right:auto; }
+  .tcard.mini canvas, .tcard.mini .verdict, .tcard.mini input { display:none; }
+
+  @media (max-width: 860px) {
+    .brand p { display:none; }
+    .panel { top:auto; left:10px; right:10px; bottom:10px; width:auto; max-height:46vh; padding:12px; gap:9px; }
+    ol.steps { display:none; }
+    .caption { bottom:auto; top:84px; transform:translateX(-50%); max-width:92vw; font-size:13px; }
+    .legend { display:none; }
+    .brand { top:12px; left:12px; } .brand .eyebrow { display:none; } .brand h1 { font-size:20px; }
+    .tcard { top:auto; bottom:calc(46vh + 18px); left:10px; width:min(300px,calc(100vw - 20px)); }
+    .views { top:10px; right:10px; gap:5px; } .views button { font-size:11.5px; padding:5px 9px; }
+  }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="labels"></div>
+
+<header class="brand">
+  <p class="eyebrow">STELLAR NUCLEOSYNTHESIS</p>
+  <h1>별의 심장, 핵융합</h1>
+  <p>별은 중심에서 수소 네 개를 헬륨 하나로 바꾸며 빛난다. 그 길은 두 가지 — <b>p-p 연쇄</b>와 <b>CNO 순환</b>.</p>
+</header>
+
+<div class="views" id="views">
+  <button id="btnStar">별 전체 보기</button>
+  <button id="btnCore">핵 속으로</button>
+  <button id="btnRot" aria-pressed="true">자동 회전</button>
+</div>
+
+<div class="dive" id="diveBox">
+  <button class="big" id="btnDive">핵 속으로 들어가기 &#9654;</button>
+  <p>마우스로 돌려 보고, 휠로 확대해 보세요 · 단면은 태양의 실제 층 비율</p>
+</div>
+
+<aside class="panel off" id="panel" aria-label="반응 단계">
+  <div class="tabs" id="tabs">
+    <button data-mode="pp" aria-pressed="true">p-p 연쇄<small>태양 에너지의 약 99%</small></button>
+    <button data-mode="cno" aria-pressed="false">CNO 순환<small>무거운 별의 주 엔진</small></button>
+  </div>
+
+  <div class="card">
+    <p class="k" id="stepNo">STEP</p>
+    <h2 id="stepTitle"></h2>
+    <div id="stepEq"></div>
+    <p id="stepDesc"></p>
+    <div class="prog"><i id="prog"></i></div>
+  </div>
+
+  <div class="ctrl">
+    <button id="bRestart" title="처음부터">&#9198;</button>
+    <button id="bPrev" title="이전 단계 (←)">&#9664;</button>
+    <button id="bPlay" title="재생/일시정지 (Space)">&#10074;&#10074;</button>
+    <button id="bNext" title="다음 단계 (→)">&#9654;</button>
+    <span class="sp" id="speeds">
+      <button data-sp="0.5">0.5×</button><button data-sp="1" aria-pressed="true">1×</button><button data-sp="2">2×</button>
+    </span>
+  </div>
+
+  <ol class="steps" id="steps"></ol>
+
+  <div class="card energy">
+    <p class="k" style="margin:0">방출 에너지 누계</p>
+    <div class="bar" id="ebar"></div>
+    <div class="row"><span>빛·열로 남는 몫</span><b id="eHeat">0.00 MeV</b></div>
+    <div class="row"><span>중성미자가 가져감</span><span id="eNu">0.00 MeV</span></div>
+  </div>
+</aside>
+
+<div class="legend" id="legend" hidden>
+  <span><i style="background:var(--proton);color:var(--proton)"></i>양성자 p</span>
+  <span><i style="background:var(--neutron);color:var(--neutron)"></i>중성자 n</span>
+  <span><i style="background:var(--positron);color:var(--positron)"></i>양전자 e⁺ · 전자 e⁻</span>
+  <span><i style="background:var(--neutrino);color:var(--neutrino)"></i>중성미자 νₑ</span>
+  <span><i style="background:var(--gamma);color:var(--gamma)"></i>감마선 γ</span>
+</div>
+
+<section class="tcard off" id="tcard" aria-label="중심 온도">
+  <div class="head"><span class="k">중심 온도</span><span class="tv" id="tVal">1570만 K</span><button class="min" id="tMin" title="접기">&#8211;</button></div>
+  <input type="range" id="tSlider" min="8" max="40" step="0.1" value="15.7" aria-label="중심 온도 (백만 K)">
+  <canvas id="tChart" width="560" height="260"></canvas>
+  <p class="verdict" id="tVerdict"></p>
+</section>
+
+<div class="caption" id="caption"></div>
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   1. 렌더러 · 장면 · 카메라
+   ═══════════════════════════════════════════════════════════════ */
+const V3 = THREE.Vector3;
+const COL = { p: 0xff3a1c, n: 0x2f6dff, pos: 0x5ff7ff, ele: 0xb48cff, nu: 0xa6ff7a, g: 0xffe066, he: 0xffc46b };
+const clamp01 = (x) => Math.min(1, Math.max(0, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+const easeOut = (t) => 1 - Math.pow(1 - t, 3);
+const easeIn = (t) => t * t * t;
+const seg = (t, a, b) => clamp01((t - a) / (b - a));
+
+const stage = document.getElementById("stage");
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.localClippingEnabled = true;
+stage.appendChild(renderer.domElement);
+
+const labelRenderer = new THREE.CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+document.getElementById("labels").appendChild(labelRenderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x030208);
+const camera = new THREE.PerspectiveCamera(48, innerWidth / innerHeight, 0.1, 3000);
+camera.position.set(170, 70, 190);
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.35;
+controls.minDistance = 6;
+controls.maxDistance = 600;
+
+scene.add(new THREE.AmbientLight(0xffe0c8, 0.22));
+const key = new THREE.PointLight(0xffe2c4, 0.85, 0, 2);
+key.position.set(8, 14, 16);
+scene.add(key);
+const rim = new THREE.PointLight(0x8fb4ff, 0.8, 0, 2);
+rim.position.set(-14, -6, -10);
+scene.add(rim);
+scene.add(new THREE.HemisphereLight(0xffc89a, 0x401020, 0.3));
+
+/* 블룸 + 마지막 sRGB 변환 (r128 은 렌더 타깃에도 톤매핑을 거므로 감마만 따로) */
+const GAMMA_SHADER = {
+  uniforms: { tDiffuse: { value: null } },
+  vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }",
+  fragmentShader: `uniform sampler2D tDiffuse; varying vec2 vUv;
+    void main(){ vec4 c = texture2D(tDiffuse, vUv); vec3 l = max(c.rgb, 0.0);
+      vec3 s = mix(l * 12.92, 1.055 * pow(l, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, l)); gl_FragColor = vec4(s, c.a); }`,
+};
+let composer = null, bloom = null;
+if (THREE.EffectComposer && THREE.UnrealBloomPass && THREE.ShaderPass) {
+  composer = new THREE.EffectComposer(renderer);
+  composer.addPass(new THREE.RenderPass(scene, camera));
+  bloom = new THREE.UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.95, 0.6, 0.62);
+  composer.addPass(bloom);
+  composer.addPass(new THREE.ShaderPass(GAMMA_SHADER));
+} else {
+  renderer.outputEncoding = THREE.sRGBEncoding;
+}
+
+addEventListener("resize", () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  if (composer) composer.setSize(innerWidth, innerHeight);
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   2. 공통 셰이더 조각 · 텍스처
+   ═══════════════════════════════════════════════════════════════ */
+const NOISE = `
+  vec3 hash3(vec3 p){ p = vec3(dot(p,vec3(127.1,311.7,74.7)), dot(p,vec3(269.5,183.3,246.1)), dot(p,vec3(113.5,271.9,124.6)));
+    return -1.0 + 2.0*fract(sin(p)*43758.5453123); }
+  float noise(vec3 p){ vec3 i = floor(p); vec3 f = fract(p); vec3 u = f*f*(3.0-2.0*f);
+    return mix(mix(mix(dot(hash3(i+vec3(0,0,0)),f-vec3(0,0,0)), dot(hash3(i+vec3(1,0,0)),f-vec3(1,0,0)),u.x),
+                   mix(dot(hash3(i+vec3(0,1,0)),f-vec3(0,1,0)), dot(hash3(i+vec3(1,1,0)),f-vec3(1,1,0)),u.x),u.y),
+               mix(mix(dot(hash3(i+vec3(0,0,1)),f-vec3(0,0,1)), dot(hash3(i+vec3(1,0,1)),f-vec3(1,0,1)),u.x),
+                   mix(dot(hash3(i+vec3(0,1,1)),f-vec3(0,1,1)), dot(hash3(i+vec3(1,1,1)),f-vec3(1,1,1)),u.x),u.y),u.z); }
+  float fbm(vec3 p){ float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++){ s += a*noise(p); p = p*2.03 + 1.7; a *= 0.5; } return s; }
+  // 보로노이 (대류 세포·쌀알무늬)
+  float cells(vec3 p){ vec3 i = floor(p); vec3 f = fract(p); float d = 1.0;
+    for (int x=-1;x<=1;x++) for (int y=-1;y<=1;y++) for (int z=-1;z<=1;z++){ vec3 g = vec3(float(x),float(y),float(z));
+      vec3 o = 0.5 + 0.5*hash3(i+g); d = min(d, length(g + o - f)); } return d; }
+`;
+function glowTexture(inner = "rgba(255,255,255,1)", mid = "rgba(255,255,255,0.35)") {
+  const c = document.createElement("canvas");
+  c.width = c.height = 128;
+  const g = c.getContext("2d");
+  const grd = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grd.addColorStop(0, inner);
+  grd.addColorStop(0.25, mid);
+  grd.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 128, 128);
+  const t = new THREE.CanvasTexture(c);
+  return t;
+}
+const GLOW = glowTexture();
+function glowSprite(color, size, opacity = 1) {
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW, color, transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
+  s.scale.setScalar(size);
+  return s;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   3. 별 전체 — 4분의 1을 잘라 낸 태양 단면
+   반지름 비: 핵 0.25 · 복사층 ~0.71 · 대류층 ~1.0 (태양)
+   ═══════════════════════════════════════════════════════════════ */
+const STAR_R = 80;
+const starGroup = new THREE.Group();
+scene.add(starGroup);
+const clipPlanes = [new THREE.Plane(new V3(-1, 0, 0), 0), new THREE.Plane(new V3(0, 0, -1), 0)];
+
+const starUniforms = { uTime: { value: 0 }, uFade: { value: 1 } };
+const photosphere = new THREE.Mesh(
+  new THREE.SphereGeometry(STAR_R, 160, 120),
+  new THREE.ShaderMaterial({
+    uniforms: starUniforms,
+    clipping: true, clippingPlanes: clipPlanes, clipIntersection: true,
+    transparent: true, toneMapped: false,
+    vertexShader: `
+      varying vec3 vPos; varying vec3 vN; varying vec3 vView;
+      #include <clipping_planes_pars_vertex>
+      void main(){ vPos = position; vN = normalize(normalMatrix * normal);
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0); vView = normalize(-mvPosition.xyz);
+        gl_Position = projectionMatrix * mvPosition;
+        #include <clipping_planes_vertex>
+      }`,
+    fragmentShader: `
+      uniform float uTime; uniform float uFade; varying vec3 vPos; varying vec3 vN; varying vec3 vView;
+      #include <clipping_planes_pars_fragment>
+      ${NOISE}
+      void main(){
+        #include <clipping_planes_fragment>
+        vec3 p = normalize(vPos);
+        float gran = cells(p*38.0 + vec3(0.0, uTime*0.05, 0.0));
+        float big = fbm(p*4.0 + uTime*0.02);
+        float spots = smoothstep(0.42, 0.55, fbm(p*2.2 + 11.0));
+        float mu = clamp(dot(vN, vView), 0.0, 1.0);
+        float limb = 0.35 + 0.65*pow(mu, 0.55);            // 주연 감광
+        vec3 hot = vec3(1.0, 0.86, 0.55), mid = vec3(1.0, 0.55, 0.16), cool = vec3(0.55, 0.18, 0.04);
+        vec3 c = mix(hot, mid, smoothstep(0.05, 0.55, gran));
+        c = mix(c, cool, 0.35*smoothstep(0.35, 0.75, gran) + 0.25*big);
+        c *= 1.0 - 0.55*spots;
+        c *= limb * 2.4;
+        c += vec3(1.0,0.45,0.1) * pow(1.0 - mu, 3.0) * 1.2;   // 가장자리 달아오름
+        gl_FragColor = vec4(c, uFade);
+      }`,
+  })
+);
+starGroup.add(photosphere);
+
+/* 단면: 잘린 두 면에 같은 셰이더 — 반지름에 따라 핵/복사층/대류층 */
+const crossMat = new THREE.ShaderMaterial({
+  uniforms: starUniforms, side: THREE.DoubleSide, transparent: true, toneMapped: false,
+  vertexShader: "varying vec3 vP; void main(){ vP = (modelMatrix * vec4(position,1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vP,1.0); }",
+  fragmentShader: `
+    uniform float uTime; uniform float uFade; varying vec3 vP;
+    ${NOISE}
+    void main(){
+      float r = length(vP) / ${STAR_R.toFixed(1)};
+      float a = atan(vP.y, length(vP.xz));
+      vec3 c;
+      // 핵 — 하얗게 달아오른 플라스마, 안쪽이 가장 뜨겁다
+      float core = 1.0 - smoothstep(0.23, 0.27, r);
+      vec3 cCore = mix(vec3(1.0, 0.98, 0.9), vec3(1.0, 0.75, 0.35), smoothstep(0.0, 0.25, r));
+      cCore *= 2.6 + 0.6*fbm(vP*0.18 + uTime*0.4);
+      // 복사층 — 빛이 이리저리 흩어지며 빠져나가는 결 (동심원 무늬 + 잔결)
+      float rad = smoothstep(0.23, 0.27, r) * (1.0 - smoothstep(0.69, 0.73, r));
+      float wav = 0.5 + 0.5*sin(r*160.0 - uTime*1.5 + fbm(vP*0.12)*6.0);
+      vec3 cRad = mix(vec3(1.0, 0.55, 0.15), vec3(1.0, 0.75, 0.35), wav*0.5) * (1.7 - 1.1*smoothstep(0.25, 0.71, r));
+      cRad *= 0.85 + 0.3*fbm(vP*0.25 - uTime*0.15);
+      // 대류층 — 끓어오르는 세포
+      float conv = smoothstep(0.69, 0.73, r);
+      vec3 q = vec3(vP.x*0.09, vP.y*0.09 - uTime*0.25, vP.z*0.09);
+      float cl = cells(q);
+      vec3 cConv = mix(vec3(1.0, 0.5, 0.12), vec3(0.45, 0.12, 0.03), smoothstep(0.1, 0.7, cl)) * (1.25 - 0.5*smoothstep(0.73, 1.0, r));
+      c = cCore*core + cRad*rad + cConv*conv;
+      // 경계선
+      float edge = (1.0 - smoothstep(0.0, 0.006, abs(r - 0.25))) + (1.0 - smoothstep(0.0, 0.006, abs(r - 0.71)));
+      c += vec3(1.0, 0.85, 0.6) * edge * 0.9;
+      if (r > 1.0) discard;
+      gl_FragColor = vec4(c, uFade);
+    }`,
+});
+{
+  const f1 = new THREE.Mesh(new THREE.CircleGeometry(STAR_R * 0.999, 160, Math.PI / 2, Math.PI), crossMat);
+  f1.rotation.y = Math.PI / 2; // 면 x = 0, z > 0
+  const f2 = new THREE.Mesh(new THREE.CircleGeometry(STAR_R * 0.999, 160, -Math.PI / 2, Math.PI), crossMat); // 면 z = 0, x > 0
+  starGroup.add(f1, f2);
+}
+const corona = glowSprite(0xff8a3a, STAR_R * 4.2, 0.55);
+starGroup.add(corona);
+const corona2 = glowSprite(0xffd090, STAR_R * 2.5, 0.35);
+starGroup.add(corona2);
+
+function cssLabel(html, cls = "") {
+  const div = document.createElement("div");
+  div.className = "lbl " + cls;
+  div.innerHTML = html;
+  const o = new THREE.CSS2DObject(div);
+  return o;
+}
+const starLabels = [
+  [0.1, 0.06, "<b>핵</b> · 약 1570만 K<br>여기서 핵융합이 일어난다"],
+  [0.48, 0.32, "<b>복사층</b><br>빛이 수십만 년에 걸쳐 헤매며 빠져나간다"],
+  [0.86, -0.15, "<b>대류층</b><br>뜨거운 기체가 끓어오르며 열을 나른다"],
+].map(([r, y, html]) => {
+  const l = cssLabel(html, "layer");
+  l.position.set(STAR_R * r * 0.82, STAR_R * y, STAR_R * r * 0.82 * 0.0 + 1);
+  starGroup.add(l);
+  return l;
+});
+{
+  const l = cssLabel("<b>광구</b> · 약 5800 K", "layer");
+  l.position.set(-STAR_R * 0.55, STAR_R * 0.86, STAR_R * 0.2);
+  starGroup.add(l);
+  starLabels.push(l);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   4. 핵 속 — 플라스마 배경과 열운동하는 입자들
+   ═══════════════════════════════════════════════════════════════ */
+const coreGroup = new THREE.Group();
+coreGroup.visible = false;
+scene.add(coreGroup);
+const coreUniforms = { uTime: { value: 0 }, uTemp: { value: 15.7 }, uFade: { value: 0 } };
+
+const plasmaBg = new THREE.Mesh(
+  new THREE.SphereGeometry(400, 64, 48),
+  new THREE.ShaderMaterial({
+    uniforms: coreUniforms, side: THREE.BackSide, depthWrite: false, transparent: true, toneMapped: false,
+    vertexShader: "varying vec3 vD; void main(){ vD = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }",
+    fragmentShader: `
+      uniform float uTime; uniform float uTemp; uniform float uFade; varying vec3 vD;
+      ${NOISE}
+      void main(){
+        float n = fbm(vD*2.6 + vec3(uTime*0.03, -uTime*0.02, uTime*0.025));
+        float m = fbm(vD*7.0 - uTime*0.05);
+        float h = clamp((uTemp - 8.0) / 32.0, 0.0, 1.0);        // 뜨거울수록 하얗고 푸르게
+        vec3 deep = mix(vec3(0.20, 0.03, 0.02), vec3(0.16, 0.10, 0.22), h);
+        vec3 glow = mix(vec3(1.0, 0.42, 0.10), vec3(0.95, 0.88, 1.0), h);
+        vec3 c = mix(deep, glow, smoothstep(-0.25, 0.65, n) * 0.55 + m*0.12);
+        c *= 0.55;
+        gl_FragColor = vec4(c, uFade);
+      }`,
+  })
+);
+coreGroup.add(plasmaBg);
+
+/* 열운동 입자: 위치 + 무작위 진동 (셰이더에서) — 온도가 오르면 빨라진다 */
+const THERM = 2600;
+const thermal = (() => {
+  const g = new THREE.BufferGeometry();
+  const pos = new Float32Array(THERM * 3), col = new Float32Array(THERM * 3), ph = new Float32Array(THERM * 4);
+  const pc = new THREE.Color(COL.p), ec = new THREE.Color(COL.ele), hc = new THREE.Color(COL.he);
+  for (let i = 0; i < THERM; i++) {
+    const r = 10 + Math.pow(Math.random(), 0.6) * 70;
+    const th = Math.random() * Math.PI * 2, u = Math.random() * 2 - 1, s = Math.sqrt(1 - u * u);
+    pos.set([r * s * Math.cos(th), r * u, r * s * Math.sin(th)], i * 3);
+    const k = Math.random();
+    const c = k < 0.55 ? pc : k < 0.92 ? ec : hc; // 양성자 · 전자 · 헬륨
+    col.set([c.r, c.g, c.b], i * 3);
+    ph.set([Math.random() * 6.28, Math.random() * 6.28, Math.random() * 6.28, k < 0.55 ? 1.0 : k < 0.92 ? 0.55 : 1.4], i * 4);
+  }
+  g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  g.setAttribute("color", new THREE.BufferAttribute(col, 3));
+  g.setAttribute("phase", new THREE.BufferAttribute(ph, 4));
+  const m = new THREE.ShaderMaterial({
+    uniforms: coreUniforms, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false,
+    vertexShader: `
+      uniform float uTime; uniform float uTemp; attribute vec3 color; attribute vec4 phase; varying vec3 vC;
+      void main(){
+        float v = sqrt(uTemp / 15.7);                       // 열속도 ∝ √T
+        float sp = v / sqrt(phase.w);                        // 무거울수록 느리다 (전자 가벼움)
+        vec3 p = position + vec3(sin(uTime*1.3*sp + phase.x), sin(uTime*1.1*sp + phase.y), sin(uTime*1.7*sp + phase.z)) * 1.6 * v;
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        gl_PointSize = min((phase.w < 0.9 ? 9.0 : 16.0) * (60.0 / -mv.z), 36.0);
+        vC = color; gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `
+      uniform float uFade; varying vec3 vC;
+      void main(){ float d = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.0, d); a = a*a;
+        gl_FragColor = vec4(vC * a * 1.4, a * 0.85 * uFade); }`,
+  });
+  const pts = new THREE.Points(g, m);
+  pts.frustumCulled = false;
+  return pts;
+})();
+coreGroup.add(thermal);
+
+/* ═══════════════════════════════════════════════════════════════
+   5. 핵 — 핵자(양성자·중성자) 묶음
+   ═══════════════════════════════════════════════════════════════ */
+const NR = 0.42;
+const nucleonGeo = new THREE.SphereGeometry(NR, 40, 28);
+function nucleonMaterial(type) {
+  const c = new THREE.Color(type === "p" ? COL.p : COL.n);
+  return new THREE.MeshPhysicalMaterial({
+    color: c, emissive: c.clone(), emissiveIntensity: type === "p" ? 0.16 : 0.12,
+    roughness: 0.32, metalness: 0.0, clearcoat: 0.9, clearcoatRoughness: 0.18,
+  });
+}
+/* A 개의 핵자를 뭉친 배치 — 중심으로 당기고 서로 밀어내는 이완을 몇 백 번 (결정적) */
+const layoutCache = {};
+function layout(A) {
+  if (layoutCache[A]) return layoutCache[A];
+  let seed = 7 + A * 13;
+  const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647 - 0.5; };
+  const P = [];
+  for (let i = 0; i < A; i++) {
+    const y = A === 1 ? 0 : 1 - (2 * i) / (A - 1), r = Math.sqrt(1 - y * y), th = i * 2.399963;
+    const rad = NR * 1.1 * Math.cbrt(A);
+    P.push(new V3(r * Math.cos(th) * rad + rnd() * 0.1, y * rad + rnd() * 0.1, r * Math.sin(th) * rad + rnd() * 0.1));
+  }
+  const D = NR * 2 * 0.93;
+  for (let it = 0; it < 400; it++) {
+    for (const p of P) p.multiplyScalar(0.985);
+    for (let i = 0; i < A; i++) for (let j = i + 1; j < A; j++) {
+      const d = P[i].clone().sub(P[j]);
+      const L = d.length() || 1e-3;
+      if (L < D) { d.multiplyScalar((D - L) / L * 0.5); P[i].add(d); P[j].sub(d); }
+    }
+  }
+  const c = new V3();
+  P.forEach((p) => c.add(p));
+  c.multiplyScalar(1 / A);
+  P.forEach((p) => p.sub(c));
+  return (layoutCache[A] = P);
+}
+const SYM = { 1: "H", 2: "He", 3: "Li", 4: "Be", 5: "B", 6: "C", 7: "N", 8: "O", 9: "F" };
+const NAME = { "1-1": "양성자", "2-1": "중수소", "3-2": "헬륨-3", "4-2": "헬륨-4 (알파 입자)" };
+function nucHTML(A, Z, sym) { return '<span class="nuc"><span class="az"><span>' + A + "</span><span>" + Z + "</span></span>" + sym + "</span>"; }
+
+const actors = new Set(); // 매 프레임 update(dt) 를 받는 것들
+
+class Nucleus {
+  constructor(types, pos, opts = {}) {
+    this.group = new THREE.Group();
+    this.group.position.copy(pos || new V3());
+    this.body = new THREE.Group(); // 자전은 몸통만 — 라벨은 늘 위에
+    this.group.add(this.body);
+    coreGroup.add(this.group);
+    this.items = [];
+    this.spin = new V3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
+    this.spinRate = 0.35;
+    for (const t of types) {
+      const mesh = new THREE.Mesh(nucleonGeo, nucleonMaterial(t));
+      this.body.add(mesh);
+      this.items.push({ mesh, type: t, target: new V3(), colorK: 1 });
+    }
+    this.halo = glowSprite(0xff9a50, 1, 0.22);
+    this.group.add(this.halo);
+    this.label = cssLabel("", "small");
+    this.group.add(this.label);
+    this.showLabel = opts.label !== false;
+    this.relayout(true);
+    actors.add(this);
+  }
+  get Z() { return this.items.filter((i) => i.type === "p").length; }
+  get A() { return this.items.length; }
+  get radius() { return NR * 1.25 * Math.cbrt(this.A) + 0.05; }
+  get pos() { return this.group.position; }
+  relayout(instant) {
+    const P = layout(this.items.length);
+    const ps = this.items.filter((i) => i.type === "p"), ns = this.items.filter((i) => i.type === "n");
+    const order = [];
+    while (ps.length || ns.length) { if (ps.length) order.push(ps.shift()); if (ns.length) order.push(ns.shift()); }
+    order.forEach((it, k) => { it.target.copy(P[k]); if (instant) it.mesh.position.copy(P[k]); });
+    this.refreshLabel();
+  }
+  refreshLabel() {
+    const A = this.A, Z = this.Z;
+    const isHe = Z === 2 && A === 4;
+    let html = A === 1 ? (Z === 1 ? "p" : "n") : nucHTML(A, Z, SYM[Z] || "?");
+    const nm = NAME[A + "-" + Z];
+    if (nm && A > 1) html += ' <span style="font-weight:500;opacity:.8">' + nm + "</span>";
+    this.label.element.innerHTML = html;
+    this.label.element.className = "lbl small " + (isHe ? "he" : A === 1 ? "p" : "");
+    this.label.position.set(0, this.radius + 0.55, 0);
+    this.label.visible = this.showLabel;
+    this.halo.scale.setScalar(this.radius * 4.2);
+    this.halo.material.color.set(isHe ? 0xffc46b : 0xff8a4a);
+  }
+  /* 다른 물체의 핵자를 받아들인다 (월드 위치를 지킨 채) */
+  absorb(other) {
+    this.body.updateWorldMatrix(true, false);
+    for (const it of other.items) {
+      const w = it.mesh.getWorldPosition(new V3());
+      this.body.add(it.mesh);
+      it.mesh.position.copy(this.body.worldToLocal(w));
+      this.items.push(it);
+    }
+    other.items = [];
+    other.dispose();
+    this.relayout(false);
+  }
+  /* 양성자 하나를 중성자로 (색이 천천히 바뀐다) */
+  convert() {
+    const it = this.items.find((i) => i.type === "p");
+    if (!it) return null;
+    it.type = "n";
+    it.colorK = 0;
+    this.relayout(false);
+    return it.mesh.getWorldPosition(new V3());
+  }
+  /* 핵자 몇 개를 떼어 새 핵으로 */
+  split(np, nn) {
+    const take = [];
+    for (const t of ["p", "n"]) {
+      let k = t === "p" ? np : nn;
+      for (let i = this.items.length - 1; i >= 0 && k > 0; i--) if (this.items[i].type === t) { take.push(this.items.splice(i, 1)[0]); k--; }
+    }
+    const c = new V3();
+    take.forEach((it) => c.add(it.mesh.getWorldPosition(new V3())));
+    c.multiplyScalar(1 / take.length);
+    const child = new Nucleus([], c);
+    child.body.updateWorldMatrix(true, false);
+    for (const it of take) {
+      const w = it.mesh.getWorldPosition(new V3());
+      child.body.add(it.mesh);
+      it.mesh.position.copy(child.body.worldToLocal(w));
+      child.items.push(it);
+    }
+    child.relayout(false);
+    this.relayout(false);
+    return child;
+  }
+  update(dt) {
+    const k = 1 - Math.exp(-dt * 7);
+    for (const it of this.items) {
+      it.mesh.position.lerp(it.target, k);
+      if (it.colorK < 1) {
+        it.colorK = Math.min(1, it.colorK + dt * 0.9);
+        const from = new THREE.Color(COL.p), to = new THREE.Color(COL.n);
+        const c = from.lerp(to, easeInOut(it.colorK));
+        it.mesh.material.color.copy(c);
+        it.mesh.material.emissive.copy(c);
+        it.mesh.material.emissiveIntensity = lerp(0.16, 0.12, it.colorK) + Math.sin(it.colorK * Math.PI) * 1.6;
+      }
+    }
+    if (this.A > 1) this.body.rotateOnAxis(this.spin, dt * this.spinRate);
+  }
+  dispose() {
+    actors.delete(this);
+    this.label.element.remove();
+    coreGroup.remove(this.group);
+    for (const it of this.items) it.mesh.material.dispose();
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   6. 가벼운 입자와 효과
+   ═══════════════════════════════════════════════════════════════ */
+/* 점을 길게 이어 그리는 발광 띠 — 감마선(물결)·중성미자(직선)·꼬리 */
+function streak(color, count, size) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+  g.setAttribute("alpha", new THREE.BufferAttribute(new Float32Array(count), 1));
+  const m = new THREE.ShaderMaterial({
+    uniforms: { uColor: { value: new THREE.Color(color) }, uSize: { value: size }, uOp: { value: 1 } },
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false,
+    vertexShader: `attribute float alpha; uniform float uSize; varying float vA;
+      void main(){ vA = alpha; vec4 mv = modelViewMatrix * vec4(position,1.0); gl_PointSize = uSize * (40.0 / -mv.z) * (0.4 + 0.6*alpha); gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `uniform vec3 uColor; uniform float uOp; varying float vA;
+      void main(){ float d = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.0, d); gl_FragColor = vec4(uColor * (1.0 + a), a * vA * uOp); }`,
+  });
+  const pts = new THREE.Points(g, m);
+  pts.frustumCulled = false;
+  return pts;
+}
+
+class Gamma {   // 물결치며 빛의 속도로 (화면에서는 천천히) 퍼져 나가는 감마선
+  constructor(origin, dir, opts = {}) {
+    this.o = origin.clone(); this.d = dir.clone().normalize(); this.t = 0;
+    this.speed = opts.speed || 9; this.len = opts.len || 4.5; this.life = opts.life || 3.2;
+    const up = Math.abs(this.d.y) < 0.9 ? new V3(0, 1, 0) : new V3(1, 0, 0);
+    this.side = new V3().crossVectors(this.d, up).normalize();
+    this.N = 90;
+    this.pts = streak(COL.g, this.N, 13);
+    coreGroup.add(this.pts);
+    this.head = glowSprite(COL.g, 1.6, 0.9);
+    coreGroup.add(this.head);
+    if (opts.label) { this.lbl = cssLabel("γ", "small g"); this.head.add(this.lbl); this.lbl.position.set(0, 0.6, 0); }
+    actors.add(this);
+  }
+  update(dt) {
+    this.t += dt;
+    const s = this.t * this.speed;
+    const P = this.pts.geometry.attributes.position, A = this.pts.geometry.attributes.alpha;
+    for (let i = 0; i < this.N; i++) {
+      const f = i / (this.N - 1), si = Math.max(0, s - this.len * (1 - f));
+      const w = Math.sin(si * 4.2 - this.t * 2) * 0.32 * Math.min(1, si);
+      const p = this.o.clone().addScaledVector(this.d, si).addScaledVector(this.side, w);
+      P.setXYZ(i, p.x, p.y, p.z);
+      A.setX(i, f * f * (s > 0 ? 1 : 0));
+    }
+    P.needsUpdate = A.needsUpdate = true;
+    this.head.position.copy(this.o).addScaledVector(this.d, s);
+    const fade = 1 - seg(this.t, this.life * 0.7, this.life);
+    this.pts.material.uniforms.uOp.value = fade;
+    this.head.material.opacity = 0.9 * fade;
+    if (this.t > this.life) this.dispose();
+  }
+  dispose() { actors.delete(this); coreGroup.remove(this.pts, this.head); if (this.lbl) this.lbl.element.remove(); }
+}
+
+class Neutrino { // 거의 아무것과도 반응하지 않고 곧장 별 밖으로
+  constructor(origin, dir) {
+    this.o = origin.clone(); this.d = dir.clone().normalize(); this.t = 0; this.speed = 15; this.life = 3.2;
+    this.N = 50;
+    this.pts = streak(COL.nu, this.N, 7);
+    coreGroup.add(this.pts);
+    this.head = glowSprite(COL.nu, 0.9, 0.95);
+    coreGroup.add(this.head);
+    this.lbl = cssLabel("νₑ", "small nu");
+    this.head.add(this.lbl);
+    this.lbl.position.set(0, 0.5, 0);
+    actors.add(this);
+  }
+  update(dt) {
+    this.t += dt;
+    const s = this.t * this.speed;
+    const P = this.pts.geometry.attributes.position, A = this.pts.geometry.attributes.alpha;
+    for (let i = 0; i < this.N; i++) {
+      const f = i / (this.N - 1), si = Math.max(0, s - 6 * (1 - f));
+      const p = this.o.clone().addScaledVector(this.d, si);
+      P.setXYZ(i, p.x, p.y, p.z);
+      A.setX(i, f * 0.8);
+    }
+    P.needsUpdate = A.needsUpdate = true;
+    this.head.position.copy(this.o).addScaledVector(this.d, s);
+    const fade = 1 - seg(this.t, 2.2, this.life);
+    this.pts.material.uniforms.uOp.value = fade;
+    this.head.material.opacity = 0.95 * fade;
+    this.lbl.element.style.opacity = fade;
+    if (this.t > this.life) this.dispose();
+  }
+  dispose() { actors.delete(this); coreGroup.remove(this.pts, this.head); this.lbl.element.remove(); }
+}
+
+class Lepton { // 양전자 / 전자 — 작은 빛 알갱이 + 꼬리, 위치는 단계 스크립트가 정한다
+  constructor(kind, pos) {
+    this.kind = kind;
+    const color = kind === "e+" ? COL.pos : COL.ele;
+    this.mesh = new THREE.Mesh(new THREE.SphereGeometry(0.16, 20, 14), new THREE.MeshBasicMaterial({ color, toneMapped: false }));
+    this.mesh.material.color.multiplyScalar(2.2);
+    this.mesh.position.copy(pos);
+    this.glow = glowSprite(color, 1.3, 0.9);
+    this.mesh.add(this.glow);
+    this.lbl = cssLabel(kind === "e+" ? "e⁺" : "e⁻", "small e" + (kind === "e+" ? "" : " ele"));
+    if (kind !== "e+") { this.lbl.element.style.color = "#cdb6ff"; this.lbl.element.style.borderColor = "rgba(180,140,255,.7)"; }
+    this.lbl.position.set(0, 0.45, 0);
+    this.mesh.add(this.lbl);
+    this.N = 24;
+    this.trail = streak(color, this.N, 6);
+    this.hist = [];
+    coreGroup.add(this.mesh, this.trail);
+    actors.add(this);
+  }
+  get pos() { return this.mesh.position; }
+  update() {
+    this.hist.unshift(this.mesh.position.clone());
+    if (this.hist.length > this.N) this.hist.pop();
+    const P = this.trail.geometry.attributes.position, A = this.trail.geometry.attributes.alpha;
+    for (let i = 0; i < this.N; i++) {
+      const h = this.hist[Math.min(i, this.hist.length - 1)];
+      P.setXYZ(i, h.x, h.y, h.z);
+      A.setX(i, 1 - i / this.N);
+    }
+    P.needsUpdate = A.needsUpdate = true;
+  }
+  dispose() { actors.delete(this); coreGroup.remove(this.mesh, this.trail); this.lbl.element.remove(); }
+}
+
+class Flash { // 융합 섬광 + 충격파 고리
+  constructor(pos, color, size, ring = true) {
+    this.t = 0; this.size = size; this.life = 1.1;
+    this.s = glowSprite(color, size, 1);
+    this.s.position.copy(pos);
+    coreGroup.add(this.s);
+    if (ring) {
+      this.ring = new THREE.Mesh(new THREE.RingGeometry(0.95, 1, 128), new THREE.MeshBasicMaterial({
+        color, transparent: true, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+      this.ring.material.color.multiplyScalar(2);
+      this.ring.position.copy(pos);
+      coreGroup.add(this.ring);
+    }
+    this.light = new THREE.PointLight(color, 6, size * 6, 2);
+    this.light.position.copy(pos);
+    coreGroup.add(this.light);
+    actors.add(this);
+  }
+  update(dt) {
+    this.t += dt;
+    const k = this.t / this.life;
+    this.s.scale.setScalar(this.size * (0.4 + 1.6 * easeOut(Math.min(1, k * 1.6))));
+    this.s.material.opacity = 1 - easeIn(clamp01(k));
+    this.light.intensity = 6 * (1 - clamp01(k * 1.4));
+    if (this.ring) {
+      this.ring.quaternion.copy(camera.quaternion);
+      this.ring.scale.setScalar(0.2 + this.size * 1.3 * easeOut(clamp01(k)));
+      this.ring.material.opacity = 0.8 * Math.pow(1 - clamp01(k), 2);
+    }
+    if (this.t > this.life) this.dispose();
+  }
+  dispose() { actors.delete(this); coreGroup.remove(this.s, this.light); if (this.ring) coreGroup.remove(this.ring); }
+}
+
+class Barrier { // 쿨롱 장벽 — 두 핵 사이에서 맥동하는 반투명 껍질
+  constructor(pos, radius, text) {
+    this.t = 0; this.alive = true;
+    this.mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 64, 48), new THREE.ShaderMaterial({
+      uniforms: { uT: { value: 0 }, uOp: { value: 0 } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false,
+      vertexShader: "varying vec3 vN; varying vec3 vV; varying vec3 vP; void main(){ vN = normalize(normalMatrix*normal); vec4 mv = modelViewMatrix*vec4(position,1.0); vV = normalize(-mv.xyz); vP = position; gl_Position = projectionMatrix*mv; }",
+      fragmentShader: `uniform float uT; uniform float uOp; varying vec3 vN; varying vec3 vV; varying vec3 vP;
+        void main(){ float f = pow(1.0 - abs(dot(vN, vV)), 2.5); float w = 0.5 + 0.5*sin(length(vP)*0.0 + vP.y*6.0 - uT*6.0);
+          vec3 c = mix(vec3(1.0,0.35,0.25), vec3(1.0,0.7,0.45), w); gl_FragColor = vec4(c * (0.25 + f*1.4), (0.03 + f*0.5) * uOp); }`,
+    }));
+    this.mesh.position.copy(pos);
+    coreGroup.add(this.mesh);
+    if (text) { this.lbl = cssLabel(text, "barrier"); this.lbl.position.set(0, radius + 0.4, 0); this.mesh.add(this.lbl); }
+    actors.add(this);
+  }
+  update(dt) {
+    this.t += dt;
+    const u = this.mesh.material.uniforms;
+    u.uT.value = this.t;
+    u.uOp.value = this.alive ? Math.min(1, this.t * 2) * (0.75 + 0.25 * Math.sin(this.t * 9)) : Math.max(0, u.uOp.value - dt * 2.5);
+    if (!this.alive && u.uOp.value <= 0) this.dispose();
+  }
+  pop() { this.alive = false; if (this.lbl) this.lbl.element.style.opacity = 0; }
+  dispose() { actors.delete(this); coreGroup.remove(this.mesh); if (this.lbl) this.lbl.element.remove(); }
+}
+
+function clearActors() { for (const a of [...actors]) a.dispose(); }
+const randDir = () => new V3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
+</script>
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   7. 반응 단계 대본
+   각 단계: build(c) 로 배우를 세우고, update(c, t) 가 단계 안의 시각 t(초)에 맞춰 움직인다.
+   c.once(key, fn) 는 한 번만 일어나는 사건 (융합 · 붕괴 · 소멸).
+   ═══════════════════════════════════════════════════════════════ */
+const H1 = nucHTML(1, 1, "H"), H2 = nucHTML(2, 1, "H"), He3 = nucHTML(3, 2, "He"), He4 = nucHTML(4, 2, "He");
+const C12 = nucHTML(12, 6, "C"), N13 = nucHTML(13, 7, "N"), C13 = nucHTML(13, 6, "C"), N14 = nucHTML(14, 7, "N"), O15 = nucHTML(15, 8, "O"), N15 = nucHTML(15, 7, "N");
+const AR = '<span class="arrow">→</span>';
+const EP = "e⁺", NU = "ν<sub>e</sub>", GM = "γ";
+const q = (mev) => ' <span class="q">+ ' + mev + " MeV</span>";
+
+/* 두 입자가 다가오다 장벽에서 멈칫, 터널링 순간 붙는 거리 */
+function approachGap(t, t1, start, wall) {
+  if (t < t1) return lerp(start, wall, easeOut(t / t1));
+  const u = t - t1;
+  return wall + 0.45 * Math.abs(Math.sin(u * 6.5)) * Math.exp(-u * 0.6);
+}
+/* 양전자가 근처 전자를 만나 소멸 → 반대 방향 감마선 둘 */
+function annihilation(c, key, from, t, t0, dirOut) {
+  const meet = from.clone().addScaledVector(dirOut, 3.2);
+  c.once(key + "e+", () => {
+    c[key + "pos"] = new Lepton("e+", from);
+    c[key + "ele"] = new Lepton("e-", meet.clone().add(new V3(3.5, 1.5, -1.5)));
+  });
+  const P = c[key + "pos"], E = c[key + "ele"];
+  if (P && P.mesh.parent) {
+    const k = seg(t, t0, t0 + 2.2);
+    P.pos.copy(from).lerp(meet, easeOut(k));
+    E.pos.copy(meet.clone().add(new V3(3.5, 1.5, -1.5))).lerp(meet, easeInOut(k));
+    if (k >= 1) c.once(key + "ann", () => {
+      P.dispose(); E.dispose();
+      new Flash(meet, 0xbff8ff, 2.4, true);
+      const d = randDir();
+      new Gamma(meet, d, { label: true }); new Gamma(meet, d.clone().negate(), { label: false });
+      c.caption("양전자 + 전자 → <b>감마선 2개</b> : 두 입자의 질량이 통째로 빛이 된다 (E = mc²)");
+    });
+  }
+}
+
+const PP = [
+  {
+    title: "① 양성자 + 양성자 → 중수소",
+    eq: H1 + " + " + H1 + AR + H2 + " + " + EP + " + " + NU + q("1.44"),
+    desc: "같은 + 전하끼리 밀어내는 <b>쿨롱 장벽</b>을 1570만 K 의 열운동만으로는 넘지 못한다. <b>양자 터널링</b>으로 아주 드물게 붙는 순간, " +
+      "<b>약한 상호작용</b>이 양성자 하나를 중성자로 바꿔야 중수소가 된다. 태양의 양성자 하나가 이 반응을 겪기까지 평균 <b>약 100억 년</b> — 그래서 별은 천천히, 오래 탄다.",
+    Q: 2 * 1.442, nu: 2 * 0.265, dur: 13, cam: [0, 5, 19],
+    build(c) {
+      c.sides = [-1, 1].map((sx, k) => {
+        const site = new V3(5.2 * sx, 0, 0);
+        const dir = new V3(0.45 * sx, 1, 0.35).normalize();
+        return { sx, site, dir, delay: k * 0.6, a: new Nucleus(["p"], site), b: new Nucleus(["p"], site) };
+      });
+    },
+    update(c, t) {
+      for (const s of c.sides) {
+        const u = t - s.delay, id = "s" + s.sx;
+        if (!s.d) {
+          const gap = approachGap(Math.max(0, u), 3.0, 12, 2.3);
+          s.a.pos.copy(s.site).addScaledVector(s.dir, gap / 2);
+          s.b.pos.copy(s.site).addScaledVector(s.dir, -gap / 2);
+          if (u > 2.6) c.once(id + "bar", () => {
+            s.bar = new Barrier(s.site, 1.5, s.sx < 0 ? "쿨롱 장벽" : "");
+            if (s.sx < 0) c.caption("두 양성자가 서로 밀어낸다 — <b>쿨롱 장벽</b>. 고전적으로는 넘을 수 없는 벽");
+          });
+          if (u > 5.2) c.once(id + "fuse", () => {
+            s.bar.pop();
+            s.a.absorb(s.b);
+            s.d = s.a;
+            new Flash(s.site, 0xffb070, 3.2);
+            if (s.sx < 0) c.caption("<b>양자 터널링</b>으로 장벽을 뚫고 붙었다! 그런데 양성자 둘만으로는 묶이지 않는다…");
+          });
+        } else {
+          s.d.pos.copy(s.site);
+          if (u > 6.2) c.once(id + "conv", () => {
+            const w = s.d.convert();
+            new Flash(w, 0x9fd0ff, 1.6, false);
+            new Neutrino(w, s.dir.clone().add(new V3(0.3 * s.sx, 0.2, 0.8)).normalize());
+            if (s.sx < 0) c.caption("<b>약한 상호작용</b>: 양성자 → 중성자 + e⁺ + νₑ. 이제 <b>중수소 ²H</b> — 중성미자는 별을 그대로 빠져나간다");
+          });
+          if (u > 6.3) annihilation(c, id, s.site.clone().add(new V3(0, 0.6, 0)), u, 6.4, new V3(0.8 * s.sx, 0.5, 0.6).normalize());
+        }
+      }
+    },
+  },
+  {
+    title: "② 중수소 + 양성자 → 헬륨-3",
+    eq: H2 + " + " + H1 + AR + He3 + " + " + GM + q("5.49"),
+    desc: "중수소는 곧바로 — 평균 <b>약 1초</b> 만에 — 양성자를 하나 더 붙잡는다. 핵력으로 단단히 묶이며 남는 에너지는 <b>감마선</b>으로 나온다. " +
+      "①과 ②는 양쪽에서 한 번씩, 모두 두 번 일어나 ³He 두 개를 만든다.",
+    Q: 2 * 5.493, nu: 0, dur: 8, cam: [0, 5, 19],
+    build(c) {
+      c.sides = [-1, 1].map((sx, k) => {
+        const site = new V3(5.2 * sx, 0, 0);
+        const dir = new V3(-0.3 * sx, -0.7, 0.65).normalize();
+        return { sx, site, dir, delay: k * 0.45, d: new Nucleus(["p", "n"], site), p: new Nucleus(["p"], site) };
+      });
+    },
+    update(c, t) {
+      for (const s of c.sides) {
+        const u = t - s.delay, id = "s" + s.sx;
+        s.d.pos.copy(s.site);
+        if (!s.he) {
+          const gap = approachGap(Math.max(0, u), 2.4, 11, 2.2);
+          s.p.pos.copy(s.site).addScaledVector(s.dir, gap);
+          if (u > 2.0) c.once(id + "bar", () => { s.bar = new Barrier(s.site, 1.6, ""); });
+          if (u > 3.4) c.once(id + "fuse", () => {
+            s.bar.pop();
+            s.d.absorb(s.p);
+            s.he = s.d;
+            new Flash(s.site, 0xffd27a, 3.4);
+            new Gamma(s.site, s.dir.clone().negate().add(new V3(0, 0.6, 0)).normalize(), { label: true });
+            if (s.sx < 0) c.caption("²H + p → <b>³He</b>. 남는 5.49 MeV 가 <b>감마선</b>으로 — 이 빛이 수십만 년 걸려 표면까지 간다");
+          });
+        }
+      }
+    },
+  },
+  {
+    title: "③ 헬륨-3 + 헬륨-3 → 헬륨-4 + 양성자 2개",
+    eq: He3 + " + " + He3 + AR + He4 + " + 2" + H1 + q("12.86"),
+    desc: "③He 두 개가 만나면 <b>헬륨-4</b> 가 되고 양성자 두 개가 다시 풀려나 다음 반응의 재료가 된다. " +
+      "전하가 2 씩이라 장벽이 더 높다. (태양에서는 이 <b>pp-I</b> 가지가 약 83%, 나머지는 ⁷Be 를 거치는 pp-II·III 가지)",
+    Q: 12.859, nu: 0, dur: 10, cam: [0, 4, 16],
+    build(c) {
+      c.a = new Nucleus(["p", "p", "n"], new V3(-5.2, 0, 0));
+      c.b = new Nucleus(["p", "p", "n"], new V3(5.2, 0, 0));
+    },
+    update(c, t) {
+      if (!c.he) {
+        const gap = approachGap(t, 3.4, 10.4, 3.2);
+        c.a.pos.set(-gap / 2, 0, 0);
+        c.b.pos.set(gap / 2, 0, 0);
+        if (t > 3.0) c.once("bar", () => { c.bar = new Barrier(new V3(), 2.2, "쿨롱 장벽 (전하 2 × 2)"); });
+        if (t > 5.0) c.once("fuse", () => {
+          c.bar.pop();
+          c.a.absorb(c.b);
+          c.he = c.a;
+          new Flash(new V3(), 0xffe0a0, 5.5);
+          c.caption("두 ³He 가 하나로 — 그중 양성자 두 개는 곧 튕겨 나간다");
+        });
+      } else {
+        c.he.pos.set(0, 0, 0);
+        if (t > 5.8) c.once("eject", () => {
+          c.p1 = c.he.split(1, 0); c.p2 = c.he.split(1, 0);
+          c.v1 = new V3(-1, 0.55, 0.4).normalize(); c.v2 = new V3(1, -0.4, 0.5).normalize();
+          c.p0 = [c.p1.pos.clone(), c.p2.pos.clone()];
+          new Flash(new V3(), 0xffc46b, 4.5);
+          c.caption("<b>⁴He</b> 탄생! 양성자 2개는 풀려나 다시 ①번 반응의 재료로");
+        });
+        if (c.p1) {
+          const s = easeOut(seg(t, 5.8, 9.5)) * 9;
+          c.p1.pos.copy(c.p0[0]).addScaledVector(c.v1, s);
+          c.p2.pos.copy(c.p0[1]).addScaledVector(c.v2, s);
+        }
+        c.he.halo.material.opacity = 0.38 + 0.25 * Math.sin(t * 4);
+      }
+    },
+  },
+  {
+    title: "합계 — 질량 결손이 에너지로",
+    eq: "4" + H1 + AR + He4 + " + 2" + EP + " + 2" + NU + q("26.7"),
+    desc: "수소 원자 4개 = 4 × 1.007825 u = <b>4.031300 u</b>, 헬륨 원자 1개 = <b>4.002603 u</b>. 사라진 0.028697 u (<b>0.71%</b>) 가 " +
+      "E = Δm c² = <b>26.7 MeV</b> 가 된다. 태양은 매초 약 6억 톤의 수소를 헬륨으로 바꾸고, 그중 <b>약 400만 톤</b>이 빛이 된다.",
+    Q: 0, nu: 0, dur: 11, cam: [0, 4, 18], summary: true,
+    build(c) {
+      c.ps = [0, 1, 2, 3].map((i) => new Nucleus(["p"], new V3(-7, 3.3 - i * 2.2, 0)));
+      c.caption("수소 4개의 질량 <b>4.031300 u</b>");
+    },
+    update(c, t) {
+      if (!c.he) {
+        const k = easeInOut(seg(t, 1.2, 3.6));
+        c.ps.forEach((p, i) => p.pos.set(-7, 3.3 - i * 2.2, 0).lerp(new V3(0, 0, 0), k));
+        if (t > 3.6) c.once("fuse", () => {
+          c.he = c.ps[0];
+          for (let i = 1; i < 4; i++) c.he.absorb(c.ps[i]);
+          c.he.convert(); c.he.convert();
+          new Flash(new V3(), 0xfff0c0, 8);
+          for (let i = 0; i < 10; i++) new Gamma(new V3(), randDir(), { speed: 10, len: 4, label: i === 0 });
+          new Neutrino(new V3(), randDir()); new Neutrino(new V3(), randDir());
+          c.caption("헬륨 1개 <b>4.002603 u</b> — 사라진 질량 <b>0.71%</b> 가 26.7 MeV 의 에너지로");
+        });
+      } else {
+        c.he.pos.set(0, 0, 0);
+        c.he.halo.material.opacity = 0.45 + 0.25 * Math.sin(t * 3);
+        if (t > 7.5) c.once("tail", () => c.caption("이 과정이 태양 중심에서 <b>매초 약 10³⁸ 번</b> 일어난다"));
+      }
+    },
+  },
+];
+
+/* ── CNO 순환: 고리 위 여섯 정거장 ── */
+const RING_R = 6.4;
+const CNO_NUC = [[6, 6], [7, 6], [6, 7], [7, 7], [8, 7], [7, 8]]; // [Z, N]
+const stationAngle = (k) => (k * Math.PI) / 3;
+const stationPos = (k) => new V3(RING_R * Math.sin(stationAngle(k)), 0, -RING_R * Math.cos(stationAngle(k)));
+const typesOf = ([Z, N]) => { const a = []; for (let i = 0; i < Math.max(Z, N); i++) { if (i < Z) a.push("p"); if (i < N) a.push("n"); } return a; };
+function arcPos(k, f) { // 정거장 k 에서 k+1 로, 고리를 따라
+  const a = stationAngle(k) + f * (Math.PI / 3);
+  return new V3(RING_R * Math.sin(a), Math.sin(f * Math.PI) * 0.6, -RING_R * Math.cos(a));
+}
+
+const ringGroup = new THREE.Group();
+ringGroup.visible = false;
+coreGroup.add(ringGroup);
+const stationLabels = [];
+{
+  const torus = new THREE.Mesh(new THREE.TorusGeometry(RING_R, 0.05, 12, 220), new THREE.MeshBasicMaterial({ color: 0xffb060, transparent: true, opacity: 0.55, toneMapped: false }));
+  torus.rotation.x = Math.PI / 2;
+  ringGroup.add(torus);
+  // 진행 방향 표시
+  for (let k = 0; k < 6; k++) for (const f of [0.35, 0.65]) {
+    const p = arcPos(k, f).setY(0), p2 = arcPos(k, f + 0.02).setY(0);
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.42, 16), new THREE.MeshBasicMaterial({ color: 0xffd090, toneMapped: false }));
+    cone.position.copy(p);
+    cone.lookAt(p2);
+    cone.rotateX(Math.PI / 2);
+    ringGroup.add(cone);
+  }
+  const kinds = ["(p, γ)", "β⁺", "(p, γ)", "(p, γ)", "β⁺", "(p, α)"];
+  for (let k = 0; k < 6; k++) {
+    const [Z, N] = CNO_NUC[k];
+    const disc = glowSprite(0xffa050, 1.6, 0.6);
+    disc.position.copy(stationPos(k));
+    ringGroup.add(disc);
+    const out = stationPos(k).normalize();
+    const l = cssLabel(nucHTML(Z + N, Z, SYM[Z]), "station");
+    l.position.copy(stationPos(k)).addScaledVector(out, 2.3).setY(-0.9);
+    ringGroup.add(l);
+    stationLabels.push(l);
+    const kl = cssLabel(kinds[k], "kind");
+    kl.position.copy(arcPos(k, 0.5).setY(0)).multiplyScalar(1.22);
+    ringGroup.add(kl);
+  }
+}
+
+/* 양성자 포획: 바깥에서 들어와 장벽에 멈칫 → 결합 → γ, 이후 고리를 따라 다음 정거장으로 */
+function captureStep(k, opts) {
+  const [Z, N] = CNO_NUC[k];
+  return {
+    title: opts.title, eq: opts.eq, desc: opts.desc, Q: opts.Q, nu: 0, dur: opts.alpha ? 12 : 10, cam: [0, 12.5, 12.5], station: k,
+    build(c) {
+      c.nuc = new Nucleus(typesOf([Z, N]), stationPos(k));
+      const out = stationPos(k).normalize();
+      c.dir = out.clone().multiplyScalar(0.85).add(new V3(0, 0.55, 0)).normalize();
+      c.p = new Nucleus(["p"], stationPos(k).addScaledVector(c.dir, 10));
+    },
+    update(c, t) {
+      if (!c.fused) {
+        c.nuc.pos.copy(stationPos(k));
+        const gap = approachGap(t, 2.6, 10, c.nuc.radius + 1.5);
+        c.p.pos.copy(stationPos(k)).addScaledVector(c.dir, gap);
+        if (t > 2.2) c.once("bar", () => {
+          c.bar = new Barrier(stationPos(k), c.nuc.radius + 1.2, "쿨롱 장벽 (전하 " + Z + ")");
+          if (k === 0) c.caption("탄소의 전하는 +6 — 양성자끼리보다 <b>장벽이 훨씬 높다</b>. 그래서 더 뜨거운 별이 필요하다");
+        });
+        if (t > 4.4) c.once("fuse", () => {
+          c.bar.pop();
+          c.nuc.absorb(c.p);
+          c.fused = true;
+          new Flash(stationPos(k), 0xffc080, 3.6);
+          if (!opts.alpha) {
+            new Gamma(stationPos(k), c.dir.clone().negate().add(new V3(0, 0.9, 0)).normalize(), { label: true });
+            c.caption(opts.cap);
+          }
+        });
+      } else if (opts.alpha) {
+        if (t > 5.4) c.once("alpha", () => {
+          c.al = c.nuc.split(2, 2);
+          c.al0 = c.al.pos.clone();
+          new Flash(stationPos(k), 0xffd27a, 4.5);
+          c.caption(opts.cap);
+        });
+        if (c.al) {
+          // 바깥쪽·위로 — 카메라 쪽으로 날아오지 않게
+          c.al.pos.copy(c.al0).addScaledVector(stationPos(k).normalize().add(new V3(0, 1.3, 0)).normalize(), easeOut(seg(t, 5.4, 9)) * 4.5);
+          c.al.halo.material.opacity = 0.5 + 0.2 * Math.sin(t * 5);
+          const f = easeInOut(seg(t, 7.4, 11));
+          c.nuc.pos.copy(arcPos(k, f));
+          if (t > 10.9) c.once("home", () => c.caption("<b>¹²C 가 처음 자리로</b> — 탄소는 쓰이지 않고 돌아온다. 촉매다"));
+        } else c.nuc.pos.copy(stationPos(k));
+      } else {
+        c.nuc.pos.copy(arcPos(k, easeInOut(seg(t, 6.6, 9.6))));
+      }
+    },
+  };
+}
+/* β⁺ 붕괴: 기다리다 → 양성자 하나가 중성자로, e⁺ + νₑ → 다음 정거장 */
+function decayStep(k, opts) {
+  const [Z, N] = CNO_NUC[k];
+  return {
+    title: opts.title, eq: opts.eq, desc: opts.desc, Q: opts.Q, nu: opts.nu, dur: 10.5, cam: [0, 12.5, 12.5], station: k,
+    build(c) {
+      c.nuc = new Nucleus(typesOf([Z, N]), stationPos(k));
+      c.caption(opts.wait);
+    },
+    update(c, t) {
+      if (t < 6.8) c.nuc.pos.copy(stationPos(k)).add(new V3(Math.sin(t * 31) * 0.04, Math.sin(t * 27) * 0.04, 0)); // 불안정한 떨림
+      c.nuc.halo.material.opacity = t < 2.4 ? 0.38 + 0.3 * Math.abs(Math.sin(t * 5)) : 0.38;
+      if (t > 2.4) c.once("decay", () => {
+        const w = c.nuc.convert();
+        new Flash(w, 0x9fd0ff, 2.2, false);
+        const out = stationPos(k).normalize();
+        new Neutrino(w, out.clone().add(new V3(0, 1.1, 0)).normalize());
+        c.caption(opts.cap);
+      });
+      if (t > 2.5) annihilation(c, "b", stationPos(k).add(new V3(0, 0.8, 0)), t, 2.6, stationPos(k).normalize().add(new V3(0, 0.7, 0)).normalize());
+      if (t >= 6.8) c.nuc.pos.copy(arcPos(k, easeInOut(seg(t, 6.8, 10))));
+    },
+  };
+}
+
+const CNO = [
+  captureStep(0, {
+    title: "① 탄소-12 가 양성자를 잡는다", eq: C12 + " + " + H1 + AR + N13 + " + " + GM + q("1.94"), Q: 1.944,
+    desc: "순환은 <b>탄소-12</b> 에서 시작한다. 전하가 +6 이라 쿨롱 장벽이 양성자끼리보다 훨씬 높아, 중심 온도가 <b>약 1700만 K</b> 를 넘는 별에서야 p-p 연쇄를 앞선다.",
+    cap: "¹²C + p → <b>¹³N</b> + γ",
+  }),
+  decayStep(1, {
+    title: "② 질소-13 의 β⁺ 붕괴", eq: N13 + AR + C13 + " + " + EP + " + " + NU + q("2.22"), Q: 2.221, nu: 0.707,
+    desc: "질소-13 은 불안정하다 (<b>반감기 약 10분</b>). 핵 속 양성자 하나가 중성자로 바뀌며 양전자와 중성미자를 내놓는다 — p-p 의 ①번과 같은 약한 상호작용.",
+    wait: "¹³N 은 불안정 — 반감기 약 <b>10분</b>을 기다린다", cap: "<b>β⁺ 붕괴</b>: 양성자 → 중성자 + e⁺ + νₑ — ¹³N 이 <b>¹³C</b> 로",
+  }),
+  captureStep(2, {
+    title: "③ 탄소-13 + 양성자 → 질소-14", eq: C13 + " + " + H1 + AR + N14 + " + " + GM + q("7.55"), Q: 7.551,
+    desc: "두 번째 양성자를 붙잡는다. 이번에도 남는 에너지는 감마선으로.", cap: "¹³C + p → <b>¹⁴N</b> + γ",
+  }),
+  captureStep(3, {
+    title: "④ 질소-14 + 양성자 → 산소-15", eq: N14 + " + " + H1 + AR + O15 + " + " + GM + q("7.30"), Q: 7.297,
+    desc: "순환에서 <b>가장 느린 단계</b> — 병목이다. 그래서 오래 탄 별 속의 C·N·O 는 대부분 <b>¹⁴N</b> 으로 쌓인다. 우리 몸의 질소도 상당 부분 이렇게 만들어졌다.",
+    cap: "¹⁴N + p → <b>¹⁵O</b> + γ — 순환에서 가장 느린 고개",
+  }),
+  decayStep(4, {
+    title: "⑤ 산소-15 의 β⁺ 붕괴", eq: O15 + AR + N15 + " + " + EP + " + " + NU + q("2.75"), Q: 2.754, nu: 0.997,
+    desc: "산소-15 도 불안정하다 (<b>반감기 약 2분</b>). 다시 양성자 하나가 중성자로.",
+    wait: "¹⁵O 도 불안정 — 반감기 약 <b>2분</b>", cap: "<b>β⁺ 붕괴</b>: ¹⁵O → <b>¹⁵N</b> + e⁺ + νₑ",
+  }),
+  captureStep(5, {
+    title: "⑥ 질소-15 + 양성자 → 탄소-12 + 헬륨-4", eq: N15 + " + " + H1 + AR + C12 + " + " + He4 + q("4.97"), Q: 4.966, alpha: true,
+    desc: "네 번째 양성자가 들어오면 <b>알파 입자(⁴He)</b> 가 떨어져 나가고, 남은 탄소-12 가 고리의 처음 자리로 돌아온다.",
+    cap: "알파 입자 <b>⁴He</b> 가 떨어져 나간다!",
+  }),
+  {
+    title: "합계 — 탄소는 촉매", eq: "4" + H1 + AR + He4 + " + 2" + EP + " + 2" + NU + q("26.7"),
+    desc: "¹²C·¹³N·¹³C·¹⁴N·¹⁵O·¹⁵N 은 한 바퀴 돌아 그대로 남는 <b>촉매</b>다. 결과는 p-p 연쇄와 똑같다. " +
+      "태양보다 <b>약 1.3배 이상 무거운 별</b>의 주 에너지원이며, 태양에서는 약 1%. 2020년 <b>Borexino</b> 실험이 태양의 CNO 중성미자를 처음 검출했다.",
+    Q: 0, nu: 0, dur: 10, cam: [0, 14, 11], summary: true,
+    build(c) {
+      c.c = new Nucleus(typesOf(CNO_NUC[0]), stationPos(0));
+      c.runner = glowSprite(0xffe0a0, 2.2, 1);
+      ringGroup.add(c.runner);
+      c.caption("양성자 4개가 고리를 한 바퀴 돌며 들어가고 — <b>⁴He 하나</b>가 나온다");
+    },
+    update(c, t) {
+      const a = (t / 6) * Math.PI * 2;
+      c.runner.position.set(RING_R * Math.sin(a), 0, -RING_R * Math.cos(a));
+      c.c.pos.copy(stationPos(0));
+      if (t > 6.2) c.once("he", () => {
+        c.he = new Nucleus(["p", "n", "p", "n"], new V3(0, 0, 0));
+        new Flash(new V3(), 0xfff0c0, 6.5);
+        for (let i = 0; i < 6; i++) new Gamma(new V3(), randDir(), { speed: 10, label: i === 0 });
+        new Neutrino(new V3(), randDir()); new Neutrino(new V3(), randDir());
+        c.caption("헬륨 1개 + 26.7 MeV — 그리고 <b>¹²C 는 그대로</b>");
+        ringGroup.remove(c.runner);
+      });
+      if (c.he) c.he.halo.material.opacity = 0.5 + 0.25 * Math.sin(t * 3);
+    },
+    cleanup(c) { if (c.runner && c.runner.parent) ringGroup.remove(c.runner); },
+  },
+];
+
+/* ═══════════════════════════════════════════════════════════════
+   8. 재생기
+   ═══════════════════════════════════════════════════════════════ */
+const el = (id) => document.getElementById(id);
+const Play = { mode: "pp", idx: 0, t: 0, playing: true, speed: 1, ctx: null, view: "star", energy: [] };
+const stepsOf = () => (Play.mode === "pp" ? PP : CNO);
+
+let capTimer = 0;
+function caption(html) {
+  const c = el("caption");
+  c.innerHTML = html;
+  c.classList.add("on");
+  capTimer = 5.5;
+}
+function makeCtx() {
+  const fired = new Set();
+  return { once(k, fn) { if (!fired.has(k)) { fired.add(k); fn(); } }, caption };
+}
+function startStep(i) {
+  const steps = stepsOf();
+  if (Play.ctx && Play.cur && Play.cur.cleanup) Play.cur.cleanup(Play.ctx);
+  clearActors();
+  Play.idx = (i + steps.length) % steps.length;
+  Play.t = 0;
+  Play.cur = steps[Play.idx];
+  Play.ctx = makeCtx();
+  Play.cur.build(Play.ctx);
+  // 에너지 누계: 이 단계 앞까지의 합
+  Play.energy = steps.slice(0, Play.idx).filter((s) => !s.summary);
+  renderStepUI();
+  renderEnergy(false);
+  if (Play.view === "core") flyTo(camFor(Play.cur), aimFor(), 1.6);
+  stationLabels.forEach((l, k) => l.element.classList.toggle("on", Play.cur.station === k));
+}
+function finishStep() {
+  if (!Play.cur.summary) { Play.energy.push(Play.cur); renderEnergy(true); }
+  startStep(Play.idx + 1);
+}
+
+function renderStepUI() {
+  const s = Play.cur, steps = stepsOf();
+  el("stepNo").textContent = (Play.mode === "pp" ? "p-p 연쇄 · " : "CNO 순환 · ") + (s.summary ? "정리" : "STEP " + (Play.idx + 1) + " / " + steps.filter((x) => !x.summary).length);
+  el("stepTitle").textContent = s.title;
+  el("stepEq").innerHTML = s.eq;
+  el("stepDesc").innerHTML = s.desc;
+  el("steps").innerHTML = steps.map((x, k) =>
+    '<li class="' + (k < Play.idx ? "done" : "") + '"><button data-k="' + k + '" aria-current="' + (k === Play.idx) + '"><span class="n">' +
+    (x.summary ? "Σ" : k + 1) + '</span><span class="e">' + x.eq.replace(/<span class="q">.*?<\/span>/, "") + "</span>" +
+    '<span class="mev">' + (x.Q ? x.Q.toFixed(2) : "") + "</span></button></li>").join("");
+  el("steps").querySelectorAll("[data-k]").forEach((b) => b.addEventListener("click", () => startStep(+b.dataset.k)));
+}
+const EBAR = ["#ff7a3c", "#ffb347", "#ffe066", "#ffd0a0", "#ff9a6a", "#ffc46b"];
+function renderEnergy() {
+  const heat = Play.energy.reduce((s, x) => s + x.Q - x.nu, 0), nu = Play.energy.reduce((s, x) => s + x.nu, 0);
+  const total = 26.73;
+  el("ebar").innerHTML = Play.energy.map((x, k) =>
+    '<i style="width:' + ((x.Q - x.nu) / total) * 100 + "%;background:" + EBAR[k % EBAR.length] + '"></i>' +
+    (x.nu ? '<i style="width:' + (x.nu / total) * 100 + '%;background:#a6ff7a;opacity:.7"></i>' : "")).join("");
+  el("eHeat").textContent = heat.toFixed(2) + " MeV";
+  el("eNu").textContent = nu.toFixed(2) + " MeV" + (Play.energy.length === stepsOf().length - 1 ? "  · 합계 " + (heat + nu).toFixed(2) + " MeV" : "");
+}
+
+function setMode(m) {
+  Play.mode = m;
+  el("tabs").querySelectorAll("[data-mode]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === m)));
+  ringGroup.visible = m === "cno" && Play.view === "core";
+  startStep(0);
+}
+function setPlaying(p) {
+  Play.playing = p;
+  el("bPlay").innerHTML = p ? "&#10074;&#10074;" : "&#9654;";
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   9. 카메라 이동 · 별 ↔ 핵
+   ═══════════════════════════════════════════════════════════════ */
+let fly = null;
+/* 세로로 긴 화면에서는 가로 폭이 모자라므로 뒤로 물러선다 */
+const narrowK = () => (camera.aspect < 1 ? Math.min(2.2, 1.1 / camera.aspect) : 1);
+const camFor = (s) => new V3(...s.cam).multiplyScalar(narrowK()).add(aimFor());
+const aimFor = () => new V3(0, camera.aspect < 1 ? -4 : 0, 0); // 좁은 화면: 아래 패널을 피해 장면을 위로
+const STAR_CAM = () => new V3(170, 70, 190).multiplyScalar(narrowK());
+function flyTo(pos, target, dur, onDone) {
+  fly = { p0: camera.position.clone(), t0: controls.target.clone(), p1: pos.clone(), t1: target.clone(), u: 0, dur, onDone };
+}
+function enterCore() {
+  if (Play.view === "core") return;
+  Play.view = "diving";
+  el("diveBox").hidden = true;
+  controls.autoRotate = false;
+  flyTo(new V3(10, 6, 34), new V3(0, 0, 0), 3.4, () => {
+    Play.view = "core";
+    starGroup.visible = false;
+    controls.autoRotate = el("btnRot").getAttribute("aria-pressed") === "true";
+    controls.autoRotateSpeed = 0.25;
+    controls.maxDistance = 70;
+    el("panel").classList.remove("off");
+    el("tcard").classList.remove("off");
+    el("legend").hidden = false;
+    el("views").classList.remove("starmode");
+    ringGroup.visible = Play.mode === "cno";
+    startStep(Play.idx);
+  });
+  coreGroup.visible = true;
+}
+function leaveCore() {
+  if (Play.view === "star") return;
+  clearActors();
+  Play.view = "star";
+  starGroup.visible = true;
+  ringGroup.visible = false;
+  el("panel").classList.add("off");
+  el("tcard").classList.add("off");
+  el("legend").hidden = true;
+  el("caption").classList.remove("on");
+  el("views").classList.add("starmode");
+  controls.maxDistance = 600;
+  flyTo(STAR_CAM(), new V3(0, 0, 0), 2.6, () => { el("diveBox").hidden = false; coreGroup.visible = false; controls.autoRotateSpeed = 0.35; });
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   10. 온도 — p-p 와 CNO 중 누가 앞서나
+   근사: ε_pp ∝ T⁴, ε_CNO ∝ T²⁰ (Carroll & Ostlie), 두 값이 1700만 K 에서 같다고 맞춤
+   ═══════════════════════════════════════════════════════════════ */
+const T_CROSS = 17;
+const epp = (T) => Math.pow(T / T_CROSS, 4), ecno = (T) => Math.pow(T / T_CROSS, 20);
+function drawChart(T) {
+  const cv = el("tChart"), g = cv.getContext("2d"), W = cv.width, H = cv.height;
+  g.clearRect(0, 0, W, H);
+  const x0 = 46, x1 = W - 12, y0 = H - 34, y1 = 12;
+  const Tmin = 8, Tmax = 40, Lmin = -7, Lmax = 8;
+  const X = (t) => x0 + ((t - Tmin) / (Tmax - Tmin)) * (x1 - x0);
+  const Y = (v) => y0 - ((Math.log10(v) - Lmin) / (Lmax - Lmin)) * (y0 - y1);
+  g.font = "20px JetBrains Mono, monospace";
+  g.strokeStyle = "rgba(255,200,150,.18)"; g.lineWidth = 1.5;
+  for (const t of [10, 15, 20, 25, 30, 35, 40]) { g.beginPath(); g.moveTo(X(t), y0); g.lineTo(X(t), y1); g.stroke(); g.fillStyle = "rgba(255,220,190,.55)"; g.fillText(String(t), X(t) - 11, H - 8); }
+  g.fillText("MK", x1 - 34, y0 - 8);
+  g.save(); g.translate(16, (y0 + y1) / 2 + 60); g.rotate(-Math.PI / 2); g.fillText("에너지 생성률 (로그)", 0, 0); g.restore();
+  const curve = (f, col) => { g.beginPath(); for (let t = Tmin; t <= Tmax; t += 0.25) { const y = Math.max(y1, Math.min(y0, Y(f(t)))); t === Tmin ? g.moveTo(X(t), y) : g.lineTo(X(t), y); } g.strokeStyle = col; g.lineWidth = 4; g.stroke(); };
+  curve(epp, "#ff7a45"); curve(ecno, "#5ff7ff");
+  g.fillStyle = "#ff9a6a"; g.fillText("p-p ∝ T⁴", X(9), Y(epp(9)) - 12);
+  g.fillStyle = "#7ff9ff"; g.fillText("CNO ∝ T²⁰", X(25.5), Y(ecno(24)) + 6);
+  // 태양
+  g.setLineDash([6, 6]); g.strokeStyle = "rgba(255,210,122,.8)"; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(X(15.7), y0); g.lineTo(X(15.7), y1); g.stroke(); g.setLineDash([]);
+  g.fillStyle = "#ffd27a"; g.fillText("태양", X(15.7) - 58, y1 + 20);
+  // 현재 온도
+  g.strokeStyle = "#fff"; g.lineWidth = 2.5; g.beginPath(); g.moveTo(X(T), y0); g.lineTo(X(T), y1); g.stroke();
+  for (const [f, c] of [[epp, "#ff7a45"], [ecno, "#5ff7ff"]]) { g.beginPath(); g.arc(X(T), Math.max(y1, Math.min(y0, Y(f(T)))), 7, 0, 7); g.fillStyle = c; g.fill(); }
+}
+function setTemp(T) {
+  coreUniforms.uTemp.value = T;
+  el("tVal").textContent = Math.round(T * 100).toLocaleString("ko-KR") + "만 K";
+  const share = ecno(T) / (epp(T) + ecno(T));
+  el("tVerdict").innerHTML = (share < 0.5 ? "<b>p-p 연쇄</b>가 앞선다" : "<b>CNO 순환</b>이 앞선다") +
+    " — 이 온도에서 CNO 의 몫 약 <b>" + (share * 100 < 1 ? (share * 100).toFixed(2) : Math.round(share * 100)) + "%</b> (근사식). " +
+    (Math.abs(T - 15.7) < 0.3 ? "태양 중심이 바로 이 온도다. 태양 전체로는 CNO 가 약 1%." : T > T_CROSS ? "태양보다 무거운 별의 중심은 이만큼 뜨겁다." : "작고 차가운 별일수록 p-p 연쇄만으로 탄다.");
+  drawChart(T);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   11. 입력 · 루프
+   ═══════════════════════════════════════════════════════════════ */
+el("btnDive").addEventListener("click", enterCore);
+el("btnCore").addEventListener("click", enterCore);
+el("btnStar").addEventListener("click", leaveCore);
+el("btnRot").addEventListener("click", (e) => {
+  const on = e.currentTarget.getAttribute("aria-pressed") !== "true";
+  e.currentTarget.setAttribute("aria-pressed", String(on));
+  controls.autoRotate = on;
+});
+el("tabs").querySelectorAll("[data-mode]").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.mode)));
+el("bPlay").addEventListener("click", () => setPlaying(!Play.playing));
+el("bNext").addEventListener("click", () => startStep(Play.idx + 1));
+el("bPrev").addEventListener("click", () => startStep(Play.idx - 1));
+el("bRestart").addEventListener("click", () => startStep(0));
+el("speeds").querySelectorAll("[data-sp]").forEach((b) => b.addEventListener("click", () => {
+  Play.speed = +b.dataset.sp;
+  el("speeds").querySelectorAll("[data-sp]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+}));
+el("tSlider").addEventListener("input", (e) => setTemp(+e.target.value));
+el("tMin").addEventListener("click", () => { const c = el("tcard"); c.classList.toggle("mini"); el("tMin").innerHTML = c.classList.contains("mini") ? "+" : "&#8211;"; });
+addEventListener("keydown", (e) => {
+  if (e.target.matches("input")) return;
+  if (e.code === "Space") { setPlaying(!Play.playing); e.preventDefault(); }
+  if (e.key === "ArrowRight") startStep(Play.idx + 1);
+  if (e.key === "ArrowLeft") startStep(Play.idx - 1);
+});
+
+/* CSS2DRenderer(r128)는 자기 visible 만 본다 — 숨긴 그룹 안의 라벨도 감춘다 */
+function hideOrphanLabels() {
+  scene.traverse((o) => {
+    if (!o.isCSS2DObject) return;
+    for (let p = o; p; p = p.parent) if (!p.visible) { o.element.style.display = "none"; return; }
+  });
+}
+const clock = new THREE.Clock();
+let time = 0;
+function frame() {
+  const real = Math.min(clock.getDelta(), 0.05);
+  time += real;
+  starUniforms.uTime.value = time;
+  coreUniforms.uTime.value = time;
+
+  if (fly) {
+    fly.u = Math.min(1, fly.u + real / fly.dur);
+    const k = easeInOut(fly.u);
+    camera.position.lerpVectors(fly.p0, fly.p1, k);
+    controls.target.lerpVectors(fly.t0, fly.t1, k);
+    if (fly.u >= 1) { const f = fly.onDone; fly = null; if (f) f(); }
+  }
+  // 별 ↔ 핵 크로스페이드: 카메라가 별 반지름 안으로 들어오면 별을 걷어 낸다
+  const dist = camera.position.length();
+  const inside = clamp01((STAR_R * 1.5 - dist) / (STAR_R * 1.1));
+  starUniforms.uFade.value = 1 - inside;
+  corona.material.opacity = 0.55 * (1 - inside);
+  corona2.material.opacity = 0.35 * (1 - inside);
+  coreUniforms.uFade.value = inside;
+  starLabels.forEach((l) => { l.element.style.opacity = 1 - clamp01(inside * 3); });
+  if (bloom) { bloom.strength = lerp(0.75, 0.8, inside); bloom.threshold = lerp(0.62, 0.78, inside); }
+
+  if (Play.view === "core" && Play.cur) {
+    const dt = Play.playing ? real * Play.speed : 0;
+    if (Play.playing) {
+      Play.t += dt;
+      Play.cur.update(Play.ctx, Play.t);
+      if (Play.t >= Play.cur.dur) finishStep();
+    }
+    for (const a of [...actors]) a.update(dt);
+    el("prog").style.width = Math.min(100, (Play.t / Play.cur.dur) * 100) + "%";
+    if (capTimer > 0) { capTimer -= dt; if (capTimer <= 0) el("caption").classList.remove("on"); }
+  }
+
+  controls.update();
+  if (composer) composer.render(); else renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+  hideOrphanLabels();
+  requestAnimationFrame(frame);
+}
+
+/* 주소로 바로: ?core · ?mode=cno · ?step=3 · ?t=4 (그 단계의 4초로) · ?pause */
+const QS = new URLSearchParams(location.search);
+setTemp(15.7);
+if (innerWidth < 860) { el("tcard").classList.add("mini"); el("tMin").textContent = "+"; }
+Play.mode = QS.get("mode") === "cno" ? "cno" : "pp";
+el("tabs").querySelectorAll("[data-mode]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === Play.mode)));
+Play.idx = Math.max(0, (+QS.get("step") || 1) - 1);
+Play.cur = stepsOf()[Play.idx];
+renderStepUI();
+renderEnergy();
+if (QS.has("core")) {
+  camera.position.set(10, 6, 34);
+  el("diveBox").hidden = true;
+  enterCore();
+  fly = null;
+  Play.view = "core";
+  starGroup.visible = false;
+  el("panel").classList.remove("off"); el("tcard").classList.remove("off"); el("legend").hidden = false;
+  ringGroup.visible = Play.mode === "cno";
+  startStep(Play.idx);
+  camera.position.copy(camFor(Play.cur));
+  controls.target.copy(aimFor());
+  fly = null;
+  const ff = +QS.get("t") || 0;
+  for (let s = 0; s < ff; s += 1 / 30) { Play.t += 1 / 30; Play.cur.update(Play.ctx, Play.t); for (const a of [...actors]) a.update(1 / 30); }
+  if (QS.has("pause")) setPlaying(false);
+} else {
+  el("views").classList.add("starmode");
+  camera.position.copy(STAR_CAM());
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>별의 심장 — 핵융합</title>
+<meta name="description" content="별의 중심에서 일어나는 p-p 연쇄 반응과 CNO 순환을 three.js 로 입체적으로 보여 주는 수업용 시각화.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>&#9728;&#65039;</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Noto+Serif+KR:wght@600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<!-- 순서가 중요하다: THREE.Pass 는 EffectComposer.js 가 정의한다 -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/renderers/CSS2DRenderer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+<style>
+  :root {
+    --bg:#05030a; --glass:rgba(16,10,20,.62); --glass-2:rgba(255,255,255,.06);
+    --line:rgba(255,200,150,.16); --line-2:rgba(255,200,150,.30);
+    --ink:#f6efe8; --muted:#c7b6a8; --faint:#8d7d72;
+    --sun:#ffb347; --sun-2:#ff7a2f;
+    --proton:#ff6a45; --neutron:#8fb4ff; --positron:#5ff7ff; --neutrino:#a6ff7a; --gamma:#ffe066; --helium:#ffd27a;
+    --f-body:"Noto Sans KR",system-ui,sans-serif; --f-title:"Noto Serif KR",serif; --f-mono:"JetBrains Mono",ui-monospace,monospace;
+    color-scheme: dark;
+  }
+  * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
+  html, body { margin:0; height:100%; overflow:hidden; background:var(--bg); color:var(--ink); font-family:var(--f-body); }
+  #stage { position:fixed; inset:0; }
+  #stage canvas { display:block; }
+  #labels { position:fixed; inset:0; pointer-events:none; }
+
+  /* ── 3D 라벨 ── */
+  .lbl { font-family:var(--f-body); font-size:13px; font-weight:700; color:#fff; padding:2px 8px; border-radius:999px;
+         background:rgba(10,6,14,.55); border:1px solid rgba(255,255,255,.18); white-space:nowrap; text-shadow:0 0 8px rgba(0,0,0,.8);
+         transform:translateY(-6px); transition:opacity .4s; }
+  .lbl.small { font-size:11px; font-weight:600; padding:1px 6px; }
+  .lbl.p { border-color:rgba(255,106,69,.7); } .lbl.e { border-color:rgba(95,247,255,.8); color:var(--positron); }
+  .lbl.nu { border-color:rgba(166,255,122,.7); color:var(--neutrino); } .lbl.g { border-color:rgba(255,224,102,.8); color:var(--gamma); }
+  .lbl.he { border-color:rgba(255,210,122,.9); color:var(--helium); box-shadow:0 0 18px rgba(255,190,90,.45); }
+  .lbl.layer { background:rgba(10,6,14,.42); font-weight:500; font-size:12.5px; border-radius:8px; padding:4px 9px; line-height:1.35; text-align:left; }
+  .lbl.layer b { color:var(--sun); font-weight:700; }
+  .lbl.station { font-size:15px; padding:3px 10px; }
+  .lbl.station.on { border-color:var(--sun); box-shadow:0 0 16px rgba(255,170,80,.55); }
+  .lbl.kind { font-family:var(--f-mono); font-size:11px; font-weight:600; color:var(--muted); background:rgba(10,6,14,.35); }
+  .lbl.barrier { color:#ffd0c0; border-color:rgba(255,140,110,.6); font-weight:600; font-size:12px; }
+
+  /* 핵종 표기 ²₁H */
+  .nuc { display:inline-flex; align-items:center; white-space:nowrap; }
+  .nuc .az { display:inline-flex; flex-direction:column; align-items:flex-end; font-size:.58em; line-height:1.02; margin-right:1px; font-weight:600; }
+
+  /* ── 머리말 ── */
+  .brand { position:fixed; top:18px; left:22px; max-width:min(440px,60vw); pointer-events:none; }
+  .brand .eyebrow { font-size:11px; letter-spacing:.22em; color:var(--sun); font-weight:700; margin:0 0 4px; }
+  .brand h1 { font-family:var(--f-title); font-size:clamp(22px,3vw,34px); margin:0; line-height:1.15; text-shadow:0 2px 24px rgba(255,120,40,.45); }
+  .brand p { margin:6px 0 0; font-size:13px; color:var(--muted); line-height:1.55; }
+
+  .views { position:fixed; top:18px; right:22px; display:flex; gap:8px; z-index:3; }
+  button { font:inherit; font-size:13px; font-weight:500; color:var(--ink); background:var(--glass); border:1px solid var(--line-2);
+           border-radius:999px; padding:7px 14px; cursor:pointer; backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+           transition:background .2s,border-color .2s,transform .1s; }
+  button:hover { background:rgba(255,160,80,.18); border-color:var(--sun); }
+  button:active { transform:translateY(1px); }
+  button[aria-pressed="true"] { background:linear-gradient(135deg,rgba(255,150,60,.45),rgba(255,90,40,.35)); border-color:var(--sun); color:#fff; }
+  button:focus-visible { outline:2px solid var(--sun); outline-offset:2px; }
+  button.big { font-size:16px; padding:12px 26px; font-weight:700; background:linear-gradient(135deg,#ff9a3c,#ff5a2a); border:0; color:#1a0904;
+               box-shadow:0 8px 40px rgba(255,110,40,.55); }
+  button.big:hover { filter:brightness(1.08); }
+
+  .dive { position:fixed; left:50%; bottom:12vh; transform:translateX(-50%); text-align:center; z-index:3; }
+  .dive p { margin:10px 0 0; font-size:12.5px; color:var(--muted); }
+
+  /* ── 오른쪽 패널 ── */
+  .panel { position:fixed; top:70px; right:22px; bottom:22px; width:min(400px,36vw); display:flex; flex-direction:column; gap:12px; z-index:2;
+           background:var(--glass); border:1px solid var(--line); border-radius:18px; padding:16px; backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+           box-shadow:0 20px 60px rgba(0,0,0,.45); transition:opacity .6s, transform .6s; }
+  .panel.off { opacity:0; transform:translateX(30px); pointer-events:none; }
+  .tabs { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+  .tabs button { border-radius:12px; padding:9px 8px; font-weight:700; font-size:14px; }
+  .tabs button small { display:block; font-weight:400; font-size:11px; color:var(--muted); margin-top:2px; }
+  .tabs button[aria-pressed="true"] small { color:#ffe9d6; }
+
+  .card { background:var(--glass-2); border:1px solid var(--line); border-radius:14px; padding:13px 14px; }
+  .card .k { font-size:11px; letter-spacing:.14em; color:var(--sun); font-weight:700; margin:0 0 6px; }
+  #stepTitle { font-family:var(--f-title); font-size:17px; margin:0 0 8px; line-height:1.35; }
+  #stepEq { font-family:var(--f-body); font-size:19px; font-weight:700; line-height:1.5; margin:0 0 8px; color:#fff;
+            text-shadow:0 0 18px rgba(255,170,90,.35); }
+  #stepEq .arrow { color:var(--sun); margin:0 .3em; }
+  #stepEq .q { color:var(--gamma); font-size:.82em; }
+  #stepDesc { font-size:13px; line-height:1.65; color:var(--muted); margin:0; }
+  #stepDesc b { color:var(--ink); }
+
+  .ctrl { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  .ctrl button { padding:6px 11px; font-family:var(--f-mono); }
+  .ctrl .sp { margin-left:auto; display:flex; gap:4px; }
+  .ctrl .sp button { font-size:12px; padding:5px 9px; }
+  .prog { height:4px; border-radius:2px; background:rgba(255,255,255,.08); overflow:hidden; margin-top:10px; }
+  .prog i { display:block; height:100%; width:0; background:linear-gradient(90deg,var(--sun-2),var(--gamma)); }
+
+  ol.steps { list-style:none; margin:0; padding:0; overflow:auto; flex:1 1 auto; min-height:80px; }
+  ol.steps li button { width:100%; text-align:left; border-radius:10px; padding:7px 10px; display:flex; gap:9px; align-items:center;
+                       background:transparent; border:1px solid transparent; font-size:13px; }
+  ol.steps li button:hover { background:rgba(255,255,255,.05); border-color:var(--line); }
+  ol.steps li button[aria-current="true"] { background:rgba(255,150,60,.16); border-color:rgba(255,170,80,.55); }
+  ol.steps .n { font-family:var(--f-mono); color:var(--faint); width:1.4em; flex:none; }
+  ol.steps .e { flex:1; }
+  ol.steps .mev { font-family:var(--f-mono); font-size:11px; color:var(--gamma); flex:none; }
+  ol.steps li.done .n { color:var(--sun); }
+  ol.steps .arrow { margin:0 .3em; color:var(--sun); }
+
+  .energy { display:flex; flex-direction:column; gap:6px; }
+  .bar { position:relative; height:12px; border-radius:6px; background:rgba(255,255,255,.07); overflow:hidden; display:flex; }
+  .bar i { display:block; height:100%; transition:width .6s ease; }
+  .energy .row { display:flex; justify-content:space-between; font-size:12px; color:var(--muted); font-family:var(--f-mono); }
+  .energy .row b { color:var(--gamma); font-weight:600; }
+
+  /* ── 캡션 ── */
+  .caption { position:fixed; left:50%; bottom:26px; transform:translateX(calc(-50% - min(200px,18vw))); max-width:min(640px,52vw);
+             text-align:center; font-size:15px; line-height:1.55; padding:10px 18px; border-radius:14px; background:rgba(8,5,12,.55);
+             border:1px solid var(--line); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); opacity:0; transition:opacity .45s; z-index:2; }
+  .caption.on { opacity:1; }
+  .caption b { color:var(--sun); }
+
+  /* ── 범례 ── */
+  .legend { position:fixed; left:22px; bottom:22px; display:flex; flex-direction:column; gap:5px; font-size:12px; color:var(--muted);
+            background:var(--glass); border:1px solid var(--line); border-radius:14px; padding:10px 12px; z-index:2; backdrop-filter:blur(10px); }
+  .legend span { display:flex; align-items:center; gap:8px; }
+  .legend i { width:11px; height:11px; border-radius:50%; display:inline-block; box-shadow:0 0 10px currentColor; }
+
+  /* ── 온도 카드 ── */
+  .tcard { position:fixed; left:22px; top:150px; width:300px; z-index:2; background:var(--glass); border:1px solid var(--line);
+           border-radius:16px; padding:12px 14px; backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); transition:opacity .6s; }
+  .tcard.off { opacity:0; pointer-events:none; }
+  .tcard .head { display:flex; justify-content:space-between; align-items:baseline; }
+  .tcard .k { font-size:11px; letter-spacing:.14em; color:var(--sun); font-weight:700; }
+  .tcard .tv { font-family:var(--f-mono); font-size:15px; font-weight:600; }
+  .tcard input[type=range] { width:100%; accent-color:var(--sun); margin:6px 0 2px; }
+  .tcard canvas { width:100%; height:130px; display:block; margin-top:4px; }
+  .tcard .verdict { font-size:12.5px; line-height:1.5; color:var(--muted); margin:6px 0 0; }
+  .tcard .verdict b { color:var(--ink); }
+  .tcard .min { padding:0 8px; font-size:12px; margin-left:8px; }
+  .tcard .head { gap:6px; } .tcard .head .k { margin-right:auto; }
+  .tcard.mini canvas, .tcard.mini .verdict, .tcard.mini input { display:none; }
+
+  @media (max-width: 860px) {
+    .brand p { display:none; }
+    .panel { top:auto; left:10px; right:10px; bottom:10px; width:auto; max-height:46vh; padding:12px; gap:9px; }
+    ol.steps { display:none; }
+    .caption { bottom:auto; top:84px; transform:translateX(-50%); max-width:92vw; font-size:13px; }
+    .legend { display:none; }
+    .brand { top:12px; left:12px; } .brand .eyebrow { display:none; } .brand h1 { font-size:20px; }
+    .tcard { top:auto; bottom:calc(46vh + 18px); left:10px; width:min(300px,calc(100vw - 20px)); }
+    .views { top:10px; right:10px; gap:5px; } .views button { font-size:11.5px; padding:5px 9px; }
+  }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="labels"></div>
+
+<header class="brand">
+  <p class="eyebrow">STELLAR NUCLEOSYNTHESIS</p>
+  <h1>별의 심장, 핵융합</h1>
+  <p>별은 중심에서 수소 네 개를 헬륨 하나로 바꾸며 빛난다. 그 길은 두 가지 — <b>p-p 연쇄</b>와 <b>CNO 순환</b>.</p>
+</header>
+
+<div class="views" id="views">
+  <button id="btnStar">별 전체 보기</button>
+  <button id="btnCore">핵 속으로</button>
+  <button id="btnRot" aria-pressed="true">자동 회전</button>
+</div>
+
+<div class="dive" id="diveBox">
+  <button class="big" id="btnDive">핵 속으로 들어가기 &#9654;</button>
+  <p>마우스로 돌려 보고, 휠로 확대해 보세요 · 단면은 태양의 실제 층 비율</p>
+</div>
+
+<aside class="panel off" id="panel" aria-label="반응 단계">
+  <div class="tabs" id="tabs">
+    <button data-mode="pp" aria-pressed="true">p-p 연쇄<small>태양 에너지의 약 99%</small></button>
+    <button data-mode="cno" aria-pressed="false">CNO 순환<small>무거운 별의 주 엔진</small></button>
+  </div>
+
+  <div class="card">
+    <p class="k" id="stepNo">STEP</p>
+    <h2 id="stepTitle"></h2>
+    <div id="stepEq"></div>
+    <p id="stepDesc"></p>
+    <div class="prog"><i id="prog"></i></div>
+  </div>
+
+  <div class="ctrl">
+    <button id="bRestart" title="처음부터">&#9198;</button>
+    <button id="bPrev" title="이전 단계 (←)">&#9664;</button>
+    <button id="bPlay" title="재생/일시정지 (Space)">&#10074;&#10074;</button>
+    <button id="bNext" title="다음 단계 (→)">&#9654;</button>
+    <span class="sp" id="speeds">
+      <button data-sp="0.5">0.5×</button><button data-sp="1" aria-pressed="true">1×</button><button data-sp="2">2×</button>
+    </span>
+  </div>
+
+  <ol class="steps" id="steps"></ol>
+
+  <div class="card energy">
+    <p class="k" style="margin:0">방출 에너지 누계</p>
+    <div class="bar" id="ebar"></div>
+    <div class="row"><span>빛·열로 남는 몫</span><b id="eHeat">0.00 MeV</b></div>
+    <div class="row"><span>중성미자가 가져감</span><span id="eNu">0.00 MeV</span></div>
+  </div>
+</aside>
+
+<div class="legend" id="legend" hidden>
+  <span><i style="background:var(--proton);color:var(--proton)"></i>양성자 p</span>
+  <span><i style="background:var(--neutron);color:var(--neutron)"></i>중성자 n</span>
+  <span><i style="background:var(--positron);color:var(--positron)"></i>양전자 e⁺ · 전자 e⁻</span>
+  <span><i style="background:var(--neutrino);color:var(--neutrino)"></i>중성미자 νₑ</span>
+  <span><i style="background:var(--gamma);color:var(--gamma)"></i>감마선 γ</span>
+</div>
+
+<section class="tcard off" id="tcard" aria-label="중심 온도">
+  <div class="head"><span class="k">중심 온도</span><span class="tv" id="tVal">1570만 K</span><button class="min" id="tMin" title="접기">&#8211;</button></div>
+  <input type="range" id="tSlider" min="8" max="40" step="0.1" value="15.7" aria-label="중심 온도 (백만 K)">
+  <canvas id="tChart" width="560" height="260"></canvas>
+  <p class="verdict" id="tVerdict"></p>
+</section>
+
+<div class="caption" id="caption"></div>

@@ -77,23 +77,29 @@
   .dive p { margin:10px 0 0; font-size:12.5px; color:var(--muted); }
 
   /* ── 오른쪽 패널 ── */
-  .panel { position:fixed; top:70px; right:22px; bottom:22px; width:min(400px,36vw); display:flex; flex-direction:column; gap:12px; z-index:2;
-           background:var(--glass); border:1px solid var(--line); border-radius:18px; padding:16px; backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+  .panel { position:fixed; top:70px; right:18px; max-height:calc(100vh - 88px); width:min(340px,32vw); display:flex; flex-direction:column; gap:9px; z-index:2;
+           background:var(--glass); border:1px solid var(--line); border-radius:16px; padding:11px; backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
            box-shadow:0 20px 60px rgba(0,0,0,.45); transition:opacity .6s, transform .6s; }
   .panel.off { opacity:0; transform:translateX(30px); pointer-events:none; }
   .tabs { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
-  .tabs button { border-radius:12px; padding:9px 8px; font-weight:700; font-size:14px; }
-  .tabs button small { display:block; font-weight:400; font-size:11px; color:var(--muted); margin-top:2px; }
+  .tabs button { border-radius:10px; padding:6px 8px; font-weight:700; font-size:13px; }
+  .tabs button small { display:block; font-size:10.5px !important; font-weight:400; font-size:11px; color:var(--muted); margin-top:2px; }
   .tabs button[aria-pressed="true"] small { color:#ffe9d6; }
 
-  .card { background:var(--glass-2); border:1px solid var(--line); border-radius:14px; padding:13px 14px; }
+  .card { background:var(--glass-2); border:1px solid var(--line); border-radius:12px; padding:10px 12px; }
+  .card .khead { display:flex; align-items:center; gap:4px; margin:0 0 4px; }
+  .card .khead .k { margin:0 auto 0 0; }
+  .card .khead button { padding:1px 8px; font-size:12px; line-height:1.4; }
+  .panel.slim .tabs, .panel.slim #stepDesc, .panel.slim .steps, .panel.slim .energy { display:none !important; }
+  .panel.slim #stepTitle { font-size:14px; margin-bottom:4px; }
+  .panel:not(.list) ol.steps { display:none; }
   .card .k { font-size:11px; letter-spacing:.14em; color:var(--sun); font-weight:700; margin:0 0 6px; }
-  #stepTitle { font-family:var(--f-title); font-size:17px; margin:0 0 8px; line-height:1.35; }
-  #stepEq { font-family:var(--f-body); font-size:19px; font-weight:700; line-height:1.5; margin:0 0 8px; color:#fff;
+  #stepTitle { font-family:var(--f-title); font-size:15px; margin:0 0 6px; line-height:1.35; }
+  #stepEq { font-family:var(--f-body); font-size:17px; font-weight:700; line-height:1.45; margin:0 0 6px; color:#fff;
             text-shadow:0 0 18px rgba(255,170,90,.35); }
   #stepEq .arrow { color:var(--sun); margin:0 .3em; }
   #stepEq .q { color:var(--gamma); font-size:.82em; }
-  #stepDesc { font-size:13px; line-height:1.65; color:var(--muted); margin:0; }
+  #stepDesc { font-size:12.5px; line-height:1.6; color:var(--muted); margin:0; }
   #stepDesc b { color:var(--ink); }
 
   .ctrl { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
@@ -103,8 +109,8 @@
   .prog { height:4px; border-radius:2px; background:rgba(255,255,255,.08); overflow:hidden; margin-top:10px; }
   .prog i { display:block; height:100%; width:0; background:linear-gradient(90deg,var(--sun-2),var(--gamma)); }
 
-  ol.steps { list-style:none; margin:0; padding:0; overflow:auto; flex:1 1 auto; min-height:80px; }
-  ol.steps li button { width:100%; text-align:left; border-radius:10px; padding:7px 10px; display:flex; gap:9px; align-items:center;
+  ol.steps { list-style:none; margin:0; padding:0; overflow:auto; flex:0 1 auto; min-height:60px; }
+  ol.steps li button { width:100%; text-align:left; border-radius:9px; padding:4px 9px; display:flex; gap:9px; align-items:center;
                        background:transparent; border:1px solid transparent; font-size:13px; }
   ol.steps li button:hover { background:rgba(255,255,255,.05); border-color:var(--line); }
   ol.steps li button[aria-current="true"] { background:rgba(255,150,60,.16); border-color:rgba(255,170,80,.55); }
@@ -114,14 +120,15 @@
   ol.steps li.done .n { color:var(--sun); }
   ol.steps .arrow { margin:0 .3em; color:var(--sun); }
 
-  .energy { display:flex; flex-direction:column; gap:6px; }
+  .energy { display:flex; flex-direction:column; gap:4px; padding:8px 12px; }
+  .bar { height:8px !important; }
   .bar { position:relative; height:12px; border-radius:6px; background:rgba(255,255,255,.07); overflow:hidden; display:flex; }
   .bar i { display:block; height:100%; transition:width .6s ease; }
   .energy .row { display:flex; justify-content:space-between; font-size:12px; color:var(--muted); font-family:var(--f-mono); }
   .energy .row b { color:var(--gamma); font-weight:600; }
 
   /* ── 캡션 ── */
-  .caption { position:fixed; left:50%; bottom:26px; transform:translateX(calc(-50% - min(200px,18vw))); max-width:min(640px,52vw);
+  .caption { position:fixed; left:calc((100vw - var(--pw,0px)) / 2); bottom:22px; transform:translateX(-50%); max-width:min(640px,52vw);
              text-align:center; font-size:15px; line-height:1.55; padding:10px 18px; border-radius:14px; background:rgba(8,5,12,.55);
              border:1px solid var(--line); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); opacity:0; transition:opacity .45s; z-index:2; }
   .caption.on { opacity:1; }
@@ -134,14 +141,14 @@
   .legend i { width:11px; height:11px; border-radius:50%; display:inline-block; box-shadow:0 0 10px currentColor; }
 
   /* ── 온도 카드 ── */
-  .tcard { position:fixed; left:22px; top:150px; width:300px; z-index:2; background:var(--glass); border:1px solid var(--line);
+  .tcard { position:fixed; left:22px; top:150px; width:260px; z-index:2; background:var(--glass); border:1px solid var(--line);
            border-radius:16px; padding:12px 14px; backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); transition:opacity .6s; }
   .tcard.off { opacity:0; pointer-events:none; }
   .tcard .head { display:flex; justify-content:space-between; align-items:baseline; }
   .tcard .k { font-size:11px; letter-spacing:.14em; color:var(--sun); font-weight:700; }
   .tcard .tv { font-family:var(--f-mono); font-size:15px; font-weight:600; }
   .tcard input[type=range] { width:100%; accent-color:var(--sun); margin:6px 0 2px; }
-  .tcard canvas { width:100%; height:130px; display:block; margin-top:4px; }
+  .tcard canvas { width:100%; height:auto; display:block; margin-top:4px; }
   .tcard .verdict { font-size:12.5px; line-height:1.5; color:var(--muted); margin:6px 0 0; }
   .tcard .verdict b { color:var(--ink); }
   .tcard .min { padding:0 8px; font-size:12px; margin-left:8px; }
@@ -150,12 +157,12 @@
 
   @media (max-width: 860px) {
     .brand p { display:none; }
-    .panel { top:auto; left:10px; right:10px; bottom:10px; width:auto; max-height:46vh; padding:12px; gap:9px; }
-    ol.steps { display:none; }
-    .caption { bottom:auto; top:84px; transform:translateX(-50%); max-width:92vw; font-size:13px; }
+    .panel { top:auto; left:10px; right:10px; bottom:10px; width:auto; max-height:46vh; padding:10px; gap:7px; }
+    ol.steps, #bList { display:none !important; }
+    .caption { left:50%; bottom:auto; top:104px; transform:translateX(-50%); max-width:92vw; font-size:13px; }
     .legend { display:none; }
     .brand { top:12px; left:12px; } .brand .eyebrow { display:none; } .brand h1 { font-size:20px; }
-    .tcard { top:auto; bottom:calc(46vh + 18px); left:10px; width:min(300px,calc(100vw - 20px)); }
+    .tcard { top:52px; left:10px; width:min(260px,calc(100vw - 20px)); padding:8px 12px; }
     .views { top:10px; right:10px; gap:5px; } .views button { font-size:11.5px; padding:5px 9px; }
   }
 </style>
@@ -188,7 +195,9 @@
   </div>
 
   <div class="card">
-    <p class="k" id="stepNo">STEP</p>
+    <div class="khead"><p class="k" id="stepNo">STEP</p>
+      <button id="bList" title="단계 목록 보기/숨기기" aria-pressed="false">목록</button>
+      <button id="bSlim" title="설명 접기/펴기" aria-pressed="false">접기</button></div>
     <h2 id="stepTitle"></h2>
     <div id="stepEq"></div>
     <p id="stepDesc"></p>

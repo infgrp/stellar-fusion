@@ -449,7 +449,7 @@ let fly = null;
 /* 세로로 긴 화면에서는 가로 폭이 모자라므로 뒤로 물러선다 */
 const narrowK = () => (camera.aspect < 1 ? Math.min(2.2, 1.1 / camera.aspect) : 1);
 const camFor = (s) => new V3(...s.cam).multiplyScalar(narrowK()).add(aimFor());
-const aimFor = () => new V3(0, camera.aspect < 1 ? -4 : 0, 0); // 좁은 화면: 아래 패널을 피해 장면을 위로
+const aimFor = () => new V3(0, camera.aspect < 1 ? -2 : 0, 0); // 좁은 화면: 아래 패널을 피해 장면을 위로
 const STAR_CAM = () => new V3(170, 70, 190).multiplyScalar(narrowK());
 function flyTo(pos, target, dur, onDone) {
   fly = { p0: camera.position.clone(), t0: controls.target.clone(), p1: pos.clone(), t1: target.clone(), u: 0, dur, onDone };
@@ -551,6 +551,28 @@ el("speeds").querySelectorAll("[data-sp]").forEach((b) => b.addEventListener("cl
 }));
 el("tSlider").addEventListener("input", (e) => setTemp(+e.target.value));
 el("tMin").addEventListener("click", () => { const c = el("tcard"); c.classList.toggle("mini"); el("tMin").innerHTML = c.classList.contains("mini") ? "+" : "&#8211;"; });
+/* 패널: 목록 · 접기 — 장면을 가리지 않도록 */
+function togglePanel(cls, btn, on) {
+  const p = el("panel");
+  on = on === undefined ? !p.classList.contains(cls) : on;
+  p.classList.toggle(cls, on);
+  el(btn).setAttribute("aria-pressed", String(on));
+  if (btn === "bSlim") el(btn).textContent = on ? "펴기" : "접기";
+}
+el("bList").addEventListener("click", () => togglePanel("list", "bList"));
+el("bSlim").addEventListener("click", () => togglePanel("slim", "bSlim"));
+/* 오른쪽 패널이 차지한 만큼 투영 중심을 왼쪽으로 옮겨, 반응이 비어 있는 화면 한가운데 오게 한다 */
+let viewOff = 0;
+function updateViewOffset(real) {
+  const p = el("panel");
+  const wide = innerWidth >= 860 && !p.classList.contains("off");
+  const goal = wide ? (innerWidth - p.getBoundingClientRect().left) / 2 : 0;
+  viewOff += (goal - viewOff) * Math.min(1, real * 4);
+  if (Math.abs(goal - viewOff) < 0.5) viewOff = goal;
+  if (viewOff > 0.5) camera.setViewOffset(innerWidth, innerHeight, viewOff, 0, innerWidth, innerHeight);
+  else if (camera.view && camera.view.enabled) camera.clearViewOffset();
+  document.documentElement.style.setProperty("--pw", (viewOff * 2).toFixed(0) + "px");
+}
 addEventListener("keydown", (e) => {
   if (e.target.matches("input")) return;
   if (e.code === "Space") { setPlaying(!Play.playing); e.preventDefault(); }
@@ -602,6 +624,7 @@ function frame() {
     if (capTimer > 0) { capTimer -= dt; if (capTimer <= 0) el("caption").classList.remove("on"); }
   }
 
+  updateViewOffset(real);
   controls.update();
   if (composer) composer.render(); else renderer.render(scene, camera);
   labelRenderer.render(scene, camera);
@@ -612,7 +635,8 @@ function frame() {
 /* 주소로 바로: ?core · ?mode=cno · ?step=3 · ?t=4 (그 단계의 4초로) · ?pause */
 const QS = new URLSearchParams(location.search);
 setTemp(15.7);
-if (innerWidth < 860) { el("tcard").classList.add("mini"); el("tMin").textContent = "+"; }
+el("tcard").classList.add("mini"); el("tMin").textContent = "+"; // 온도 카드는 접힌 채 시작
+if (innerHeight < 760 || innerWidth < 860) togglePanel("slim", "bSlim", true);
 Play.mode = QS.get("mode") === "cno" ? "cno" : "pp";
 el("tabs").querySelectorAll("[data-mode]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === Play.mode)));
 Play.idx = Math.max(0, (+QS.get("step") || 1) - 1);
